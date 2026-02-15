@@ -52,7 +52,10 @@ def _():
 
     config.update("jax_enable_x64", True)     # use double rather than single precision floats
     config.update('jax_platform_name', 'cpu') # use CPU rather than GPU
-    return MCMC, NUTS, jax, jnp, jr, np, pd, plt
+
+    from pathlib import Path as _Path
+    public_dir = str(_Path(__file__).parent / "public")
+    return MCMC, NUTS, public_dir, jax, jnp, jr, np, pd, plt
 
 
 @app.cell
@@ -88,16 +91,16 @@ def _(mo, qr_base64):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(public_dir, mo):
     mo.md(rf"""
     ## Research Environment at Warwick
 
     {mo.center(mo.hstack([mo.vstack([mo.md("EPSRC Centre for Doctoral Training in     Modelling of Heterogeneous Systems (HetSys CDT)"),
-                                     mo.image("./public/hetSys-schematic.png"),
-                                     mo.image("./public/quantum-atomistic-continuum.png")],
+                                     mo.image(f"{public_dir}/hetSys-schematic.png"),
+                                     mo.image(f"{public_dir}/quantum-atomistic-continuum.png")],
                                      heights=[.5, 2, .5], justify="center", gap=0, align="center"),
                           mo.vstack([mo.md("Warwick Centre for Predictive Modelling (WCPM)"),
-                                     mo.image("./public/wcpm-schematic.png")])
+                                     mo.image(f"{public_dir}/wcpm-schematic.png")])
                          ], widths=[1.2, 1], align="center")
               )}
     """)
@@ -157,13 +160,13 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(public_dir, mo):
     mo.md(rf"""
     ## Uncertainty Quantification Across the Scales
 
     In the HetSys CDT, we are particularly interested in multiscale modelling. The addition of reliable uncertainty quantification on model outputs is in its infancy, and has the potential to make models much more powerful.
 
-    {mo.center(mo.image("./public/hetsys-multiscale-fig.png", width="60%"))}
+    {mo.center(mo.image(f"{public_dir}/hetsys-multiscale-fig.png", width="60%"))}
     """)
     return
 
@@ -221,38 +224,38 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(public_dir, mo):
     mo.md(rf"""
     ## Bayesian Approach to Inverse Problems
 
     - *Uncertainty Propagation* is equivalent to *forward uncertainty quantification*
     - We propagate *assumed* distributions of input parameters through a simulation code to determine distribution of outputs
 
-    {mo.center(mo.image("./public/uq-forward.png", width="60%"))}
+    {mo.center(mo.image(f"{public_dir}/uq-forward.png", width="60%"))}
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(public_dir, mo):
     mo.md(rf"""
     ### Inverse Uncertainty Quantification
 
     - In *inverse uncertainty quantification*, we want to infer the distribution of the input (calibration) parameters from data, which could come either from experiment or high-level simulation (e.g. calibrating a reaction model with data from computational chemistry)
 
-    {mo.center(mo.image("./public/uq-inverse-1.png", width="60%"))}
+    {mo.center(mo.image(f"{public_dir}/uq-inverse-1.png", width="60%"))}
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(public_dir, mo):
     mo.md(rf"""
     ### Inverse + Forward Uncertainty Quantification
 
     - Putting everything together gives an improved estimated of the distribution for the output quantities of interest.
 
-    {mo.center(mo.image("./public/uq-inverse-2.png", width="60%"))}
+    {mo.center(mo.image(f"{public_dir}/uq-inverse-2.png", width="60%"))}
     """)
     return
 
@@ -325,8 +328,8 @@ def _(mo):
 
 
 @app.cell
-def _(pd):
-    catalysis_data = pd.read_csv("./public/catalysis.csv")
+def _(public_dir, pd):
+    catalysis_data = pd.read_csv(f"{public_dir}/catalysis.csv")
     catalysis_data
     return (catalysis_data,)
 
@@ -351,13 +354,13 @@ def _(catalysis_data, mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(public_dir, mo):
     mo.md(rf"""
     ### Catalytic Reactions
 
     This imbalance is explained by the presence of an unknown precursor which we shall call X. The paper suggests the follow mechanism:
 
-    {mo.center(mo.image("./public/process.png", width="50%"))}
+    {mo.center(mo.image(f"{public_dir}/process.png", width="50%"))}
     """)
     return
 
