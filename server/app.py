@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
+PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
 CONFIG_FILE = Path(__file__).parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 
@@ -28,6 +29,15 @@ for notebook in sorted(NOTEBOOKS_DIR.glob("*.py")):
     server = server.with_app(path=f"/{name}", root=str(notebook))
     live_notebooks.append(name)
 
+# Create marimo server for public demos (mounted at /demos)
+demo_server = marimo.create_asgi_app()
+public_demos = []
+if PRESENTATIONS_DIR.exists():
+    for notebook in sorted(PRESENTATIONS_DIR.glob("*/*.py")):
+        name = notebook.parent.name
+        demo_server = demo_server.with_app(path=f"/{name}", root=str(notebook))
+        public_demos.append(name)
+
 # Load demo config
 demo_config = []
 if CONFIG_FILE.exists():
@@ -39,11 +49,13 @@ if CONFIG_FILE.exists():
 config_by_name = {d["name"]: d for d in demo_config}
 config_order = [d["name"] for d in demo_config]
 
-# Get WASM notebooks from config (those not in live_notebooks)
+# Get WASM notebooks from config (those not in live_notebooks and not demos)
 wasm_notebooks = [
     d["name"]
     for d in demo_config
-    if d["name"] not in live_notebooks and not d.get("hidden", False)
+    if d["name"] not in live_notebooks
+    and d.get("type") != "demo"
+    and not d.get("hidden", False)
 ]
 
 
@@ -76,6 +88,10 @@ def index():
     for name in wasm_notebooks:
         all_notebooks.append((name, f"/wasm/{name}/", "wasm"))
 
+    # Add public demos (served at /demos)
+    for name in public_demos:
+        all_notebooks.append((name, f"/demos/{name}/", "demo"))
+
     # Sort by config order, then alphabetically
     all_notebooks.sort(key=lambda x: get_sort_key(x[0]))
 
@@ -100,6 +116,7 @@ def index():
             .badge {{ font-size: 0.7em; padding: 2px 6px; border-radius: 3px; margin-left: 8px; text-transform: uppercase; }}
             .wasm {{ background: #d4edda; color: #155724; }}
             .live {{ background: #fff3cd; color: #856404; }}
+            .demo {{ background: #d1ecf1; color: #0c5460; }}
             .note {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1em; margin: 1.5em 0; }}
         </style>
     </head>
@@ -114,7 +131,8 @@ def index():
         <ul>{notebook_links}</ul>
         <div class="note">
             <p><strong>WASM</strong> notebooks run in your browser (no login required).
-            <strong>LIVE</strong> notebooks require University of Warwick SSO.</p>
+            <strong>LIVE</strong> notebooks require University of Warwick SSO.
+            <strong>DEMO</strong> presentations are public (no login required).</p>
         </div>
     </body>
     </html>
@@ -134,6 +152,9 @@ def wasm_redirect(name: str):
 
 # Mount marimo server at /live (SSO protected path)
 app.mount("/live", server.build())
+
+# Mount marimo server at /demos (public path)
+app.mount("/demos", demo_server.build())
 
 if __name__ == "__main__":
     import uvicorn

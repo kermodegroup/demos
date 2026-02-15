@@ -31,7 +31,7 @@ echo "  Live notebooks (this server):  $LIVE_COUNT"
 # Sync server venv with pyproject.toml
 echo -e "\n${YELLOW}Syncing server dependencies...${NC}"
 scp pyproject.toml ${REMOTE}:~/marimo-server/
-ssh ${REMOTE} 'cd ~/marimo-server && uv sync --extra jax --extra server'
+ssh ${REMOTE} 'cd ~/marimo-server && uv sync --extra jax --extra numpyro --extra server'
 
 # Deploy demos.toml config and app.py
 echo -e "\n${YELLOW}Deploying server config...${NC}"
@@ -53,6 +53,21 @@ else
     echo "  No live notebooks to deploy"
     # Clear remote notebooks directory if no live notebooks
     ssh ${REMOTE} 'rm -f ~/marimo-server/notebooks/*.py'
+fi
+
+# Deploy presentations (public demos)
+echo -e "\n${YELLOW}Deploying presentations...${NC}"
+PRESENTATIONS_DIR="${DEMOS_DIR}/presentations"
+if [ -d "$PRESENTATIONS_DIR" ] && [ "$(ls -A "$PRESENTATIONS_DIR" 2>/dev/null)" ]; then
+    ssh ${REMOTE} 'rm -rf ~/marimo-server/presentations && mkdir -p ~/marimo-server/presentations'
+    for pres_dir in "$PRESENTATIONS_DIR"/*/; do
+        [ -d "$pres_dir" ] || continue
+        pres_name=$(basename "$pres_dir")
+        echo "  Deploying presentation: $pres_name"
+        scp -r "$pres_dir" ${REMOTE}:~/marimo-server/presentations/
+    done
+else
+    echo "  No presentations to deploy"
 fi
 
 # Restart server

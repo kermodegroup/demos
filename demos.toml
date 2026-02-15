@@ -40,3 +40,8 @@ title = "Neural ODE Solver"
 [[demos]]
 name = "clustering-demo"
 title = "K-Means and GMM Clustering"
+
+[[demos]]
+name = "uq-kinetics"
+title = "Uncertainty in Models and Data"
+type = "demo"

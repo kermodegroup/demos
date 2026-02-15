@@ -32,6 +32,12 @@ jax = [
     "equinox",
     "optax",
 ]
+numpyro = [
+    "numpyro",
+    "arviz",
+    "diffrax",
+    "tqdm",
+]
 server = [
     "fastapi",
     "uvicorn",
