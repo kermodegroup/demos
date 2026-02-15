@@ -73,6 +73,9 @@ def _(mo, qr_base64):
     School of Engineering <br>
     University of Warwick
 
+    <div style="display: flex; gap: 2em; align-items: flex-start; margin-top: 0.5em;">
+    <div style="flex: 1;">
+
     ### Objectives
 
     - Give a brief overview of predictive modelling and uncertainty quantification
@@ -82,9 +85,12 @@ def _(mo, qr_base64):
         - scientific machine learning with a hybrid mechanistic/ML model
         - in a fully Bayesian fashion using MCMC sampling
 
-    <div style="text-align: center; margin-top: 1em;">
-    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 120px; height: 120px;" /><br>
-    <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/" style="font-size: 0.8em;">sciml.warwick.ac.uk/demos/uq-kinetics</a>
+    </div>
+    <div style="text-align: center; flex-shrink: 0; padding-top: 1em;">
+    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 480px; height: 480px;" /><br>
+    <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/" style="font-size: 0.9em;">sciml.warwick.ac.uk/demos/uq-kinetics</a><br>
+    <a href="https://github.com/kermodegroup/demos" style="font-size: 0.9em;">github.com/kermodegroup/demos</a>
+    </div>
     </div>
     """)
     return
@@ -948,6 +954,9 @@ def _(mo, qr_base64):
     mo.md(rf"""
     ## Conclusions
 
+    <div style="display: flex; gap: 2em; align-items: flex-start;">
+    <div style="flex: 1;">
+
     - Inverse problems can be reformulated as optimisation problems through the definition of a loss function that is minimimsed to give a good match between a model and data.
 
     - This classical approach to calibration often works well, but there may be no solutions, or more than one solution, and there no obvious way to quantify uncertainties or to account for prior knowledge.
@@ -962,12 +971,12 @@ def _(mo, qr_base64):
 
     *The ERAMET project has received funding from the European Commission's Horizon Europe Programme under the grant agreement number 101137141*
 
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1em;">
-    <div>
+    </div>
+    <div style="text-align: center; flex-shrink: 0; padding-top: 1em;">
+    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 480px; height: 480px;" /><br>
     <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/" style="font-size: 0.9em;">sciml.warwick.ac.uk/demos/uq-kinetics</a><br>
     <a href="https://github.com/kermodegroup/demos" style="font-size: 0.9em;">github.com/kermodegroup/demos</a>
     </div>
-    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 120px; height: 120px;" />
     </div>
     """)
     return
