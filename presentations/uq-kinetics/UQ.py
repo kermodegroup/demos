@@ -40,6 +40,7 @@ def _():
 
     import numpyro
     import numpyro.distributions as dist
+    import arviz as az
     from numpyro.infer import NUTS, MCMC
     numpyro.set_host_device_count(min(2, os.cpu_count() or 1))
 
@@ -55,7 +56,7 @@ def _():
 
     from pathlib import Path as _Path
     public_dir = str(_Path(__file__).parent / "public")
-    return MCMC, NUTS, public_dir, jax, jnp, jr, np, pd, plt
+    return MCMC, NUTS, az, jax, jnp, jr, np, pd, plt, public_dir
 
 
 @app.cell
@@ -66,38 +67,37 @@ def _(plt):
 
 @app.cell(hide_code=True)
 def _(mo, qr_base64):
-    mo.md(rf"""
+    mo.vstack([
+        mo.md(r"""
     ## Uncertainty in Models and Data
 
     **James Kermode** <br>
     School of Engineering <br>
     University of Warwick
-
-    <div style="display: flex; gap: 2em; align-items: flex-start; margin-top: 0.5em;">
-    <div style="flex: 1;">
-
+        """),
+        mo.hstack([
+            mo.md(r"""
     ### Objectives
 
     - Give a brief overview of predictive modelling and uncertainty quantification
     - Explain key ideas behind inverse problems and model calibration
     - Demonstrate how a simple catalysis inverse problems can be solved in three ways:
-        - classical optimisation with a mechanistic ODE model
-        - scientific machine learning with a hybrid mechanistic/ML model
-        - in a fully Bayesian fashion using MCMC sampling
-
-    </div>
-    <div style="text-align: center; flex-shrink: 0; padding-top: 1em;">
-    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 480px; height: 480px;" /><br>
-    <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/" style="font-size: 0.9em;">sciml.warwick.ac.uk/demos/uq-kinetics</a><br>
-    <a href="https://github.com/kermodegroup/demos" style="font-size: 0.9em;">github.com/kermodegroup/demos</a>
-    </div>
-    </div>
-    """)
+    - classical optimisation with a mechanistic ODE model
+    - scientific machine learning with a hybrid mechanistic/ML model
+    - in a fully Bayesian fashion using MCMC sampling
+            """),
+            mo.Html(f'''<div style="text-align: center;">
+    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 360px; height: 360px;" /><br>
+    <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/">sciml.warwick.ac.uk/demos/uq-kinetics</a><br>
+    <a href="https://github.com/kermodegroup/demos">github.com/kermodegroup/demos</a>
+    </div>'''),
+        ], widths=[2, 1], align="center"),
+    ])
     return
 
 
 @app.cell(hide_code=True)
-def _(public_dir, mo):
+def _(mo, public_dir):
     mo.md(rf"""
     ## Research Environment at Warwick
 
@@ -166,7 +166,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(public_dir, mo):
+def _(mo, public_dir):
     mo.md(rf"""
     ## Uncertainty Quantification Across the Scales
 
@@ -230,7 +230,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(public_dir, mo):
+def _(mo, public_dir):
     mo.md(rf"""
     ## Bayesian Approach to Inverse Problems
 
@@ -243,7 +243,7 @@ def _(public_dir, mo):
 
 
 @app.cell(hide_code=True)
-def _(public_dir, mo):
+def _(mo, public_dir):
     mo.md(rf"""
     ### Inverse Uncertainty Quantification
 
@@ -255,7 +255,7 @@ def _(public_dir, mo):
 
 
 @app.cell(hide_code=True)
-def _(public_dir, mo):
+def _(mo, public_dir):
     mo.md(rf"""
     ### Inverse + Forward Uncertainty Quantification
 
@@ -334,7 +334,7 @@ def _(mo):
 
 
 @app.cell
-def _(public_dir, pd):
+def _(pd, public_dir):
     catalysis_data = pd.read_csv(f"{public_dir}/catalysis.csv")
     catalysis_data
     return (catalysis_data,)
@@ -360,7 +360,7 @@ def _(catalysis_data, mo):
 
 
 @app.cell(hide_code=True)
-def _(public_dir, mo):
+def _(mo, public_dir):
     mo.md(rf"""
     ### Catalytic Reactions
 
@@ -892,18 +892,10 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
-def _(axs2, mo):
-    mo.vstack([mo.md(
-        rf"""
-    ## Markov Chain Monte Carlo
-
-    - MCMC can be used to generate samples from the full posterior for the catalysis problem using MCMC
-    - This takes a bit longer, so I won't demonstrate in real time, but allows correlations between parameters to be assessed.
-
-    """
-    ), axs2[-1, 1]])
-    return
+@app.cell
+def _(mo):
+    run_mcmc = mo.ui.run_button(label="Run MCMC...")
+    return (run_mcmc,)
 
 
 @app.cell
@@ -918,29 +910,39 @@ def _(f, jax, jnp):
 
 
 @app.cell
-def _(mcmc):
-    import arviz as az
-    D = az.from_numpyro(mcmc)
-    axs2 = az.plot_pair(D, marginals=True, scatter_kwargs={'s': 50}, figsize=(12, 6))
-    return D, axs2
+def _(MCMC, NUTS, az, jnp, jr, log_post, mo, run_mcmc, t_exp, y):
+    if run_mcmc.value:
+        _sigma = 10.0
+        _gamma = 100.0
 
+        mcmc_result = MCMC(NUTS(potential_fn=lambda x: -log_post(x, _sigma, _gamma, t_exp, y)),  num_warmup=500, num_samples=500, num_chains=1, progress_bar=False)
+        _key = jr.PRNGKey(0)
+        mcmc_result.run(_key, init_params=jnp.array([1.36, 1.66, 1.35, -1.05, -0.16]))
 
-@app.cell
-def _(MCMC, NUTS, jnp, jr, log_post, t_exp, y):
-    _sigma = 10.0
-    _gamma = 100.0
+        mcmc_data = az.from_numpyro(mcmc_result)
+        axs2 = az.plot_pair(mcmc_data, marginals=True, scatter_kwargs={'s': 50}, figsize=(12, 6))
 
-    mcmc = MCMC(NUTS(potential_fn=lambda x: -log_post(x, _sigma, _gamma, t_exp, y)),  num_warmup=500, num_samples=500, num_chains=1)
-    key = jr.PRNGKey(0)
-    mcmc.run(key, init_params=jnp.array([1.36, 1.66, 1.35, -1.05, -0.16]), progress_bar=False)
-    return (mcmc,)
+        _outputs = [axs2[-1, 1]]
+    else:
+        mcmc_data = None
+        _outputs = []
+
+    mo.vstack([
+        mo.md(rf"""
+    ## Markov Chain Monte Carlo
+
+    - MCMC can be used to generate samples from the full posterior for the catalysis problem
+    - Click below to run the sampler live and assess correlations between parameters
+        """),
+        run_mcmc] + _outputs)
+    return (mcmc_data,)
 
 
 @app.cell(hide_code=True)
-def _(D, Z, catalysis_plot, np):
+def _(Z, catalysis_plot, mcmc_data, mo, np):
+    mo.stop(mcmc_data is None)
     _t = np.linspace(0, 180, 200)
-
-    X_rest = D["posterior"]['Param:0'][0, :, :]
+    X_rest = mcmc_data["posterior"]['Param:0'][0, :, :]
     Y_rest = np.zeros((X_rest.shape[0], 200, 6))
     for _i in range(X_rest.shape[0]):
         Y_rest[_i, :, :] = Z(np.array(X_rest[_i, :]), _t)
@@ -951,12 +953,10 @@ def _(D, Z, catalysis_plot, np):
 
 @app.cell(hide_code=True)
 def _(mo, qr_base64):
-    mo.md(rf"""
-    ## Conclusions
-
-    <div style="display: flex; gap: 2em; align-items: flex-start;">
-    <div style="flex: 1;">
-
+    mo.vstack([
+        mo.md(r"""## Conclusions"""),
+        mo.hstack([
+            mo.md(r"""
     - Inverse problems can be reformulated as optimisation problems through the definition of a loss function that is minimimsed to give a good match between a model and data.
 
     - This classical approach to calibration often works well, but there may be no solutions, or more than one solution, and there no obvious way to quantify uncertainties or to account for prior knowledge.
@@ -970,20 +970,21 @@ def _(mo, qr_base64):
     - Now collaborating with Linda Wanika and Mike Chappell to apply some of these ideas to pharmacokinetic models in context of ERAMET project.
 
     *The ERAMET project has received funding from the European Commission's Horizon Europe Programme under the grant agreement number 101137141*
-
-    </div>
-    <div style="text-align: center; flex-shrink: 0; padding-top: 1em;">
-    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 480px; height: 480px;" /><br>
-    <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/" style="font-size: 0.9em;">sciml.warwick.ac.uk/demos/uq-kinetics</a><br>
-    <a href="https://github.com/kermodegroup/demos" style="font-size: 0.9em;">github.com/kermodegroup/demos</a>
-    </div>
-    </div>
-    """)
+            """),
+            mo.Html(f'''<div style="text-align: center;">
+    <img src="data:image/png;base64,{qr_base64}" alt="QR Code" style="width: 360px; height: 360px;" /><br>
+    <a href="https://sciml.warwick.ac.uk/demos/uq-kinetics/">sciml.warwick.ac.uk/demos/uq-kinetics</a><br>
+    <a href="https://github.com/kermodegroup/demos">github.com/kermodegroup/demos</a>
+    </div>'''),
+        ], widths=[2, 1], align="center"),
+    ])
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _():
+    import marimo as mo
+
     import qrcode
     import io
     import base64
@@ -998,14 +999,7 @@ def _():
     img.save(buffer, format='PNG')
     buffer.seek(0)
     qr_base64 = base64.b64encode(buffer.read()).decode()
-    return (qr_base64,)
-
-
-@app.cell
-def _():
-    import marimo as mo
-
-    return (mo,)
+    return mo, qr_base64
 
 
 if __name__ == "__main__":
