@@ -600,8 +600,8 @@ def _(
 ):
     # Prepare data for Altair plots
     X_plot = np.linspace(-2, 2, 200)
-    custom_code = get_custom_code() if function_dropdown.value == 'custom' else None
-    y_gt = get_ground_truth(X_plot, function_dropdown.value, custom_code)
+    _custom_code = get_custom_code() if function_dropdown.value == 'custom' else None
+    y_gt = get_ground_truth(X_plot, function_dropdown.value, _custom_code)
 
     # Ground truth DataFrame
     gt_df = pd.DataFrame({'x': X_plot, 'y': y_gt, 'type': 'Ground truth'})
