@@ -297,7 +297,7 @@ def _(eqx, jax, jnp):
         model = eqx.apply_updates(model, updates)
         return model, opt_state, loss
 
-    def train_model(model, optimizer, loss_fn, x_train, n_epochs):
+    def train_model(model, optimizer, loss_fn, x_train, n_epochs, on_step=None):
         """Train for n_epochs, returning loss history and snapshots."""
         opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
         losses = []
@@ -310,6 +310,9 @@ def _(eqx, jax, jnp):
 
             if i % snapshot_interval == 0 or i == n_epochs - 1:
                 snapshots.append((i + 1, model))
+
+            if on_step is not None:
+                on_step(i + 1, float(loss))
 
         return model, losses, snapshots
 
@@ -378,7 +381,7 @@ def _(mo, get_losses):
 
 @app.cell(hide_code=True)
 def _(
-    eqx, jax, jnp, optax,
+    mo, eqx, jax, jnp, optax,
     target_dropdown, width_slider, depth_slider, flow_T_slider,
     ode_steps_slider, lr_slider, n_samples_slider, epochs_slider,
     weight_decay_slider, grad_clip_slider, cosine_schedule_checkbox,
@@ -461,9 +464,31 @@ def _(
         _loss_fn = make_loss_fn(target_means, target_stds, target_weights, T, n_steps)
         optimizer = _build_optimizer(n_epochs)
         _t0 = _time.time()
+        _update_every = max(1, n_epochs // 50)
+        def _on_step(_ep, _lv):
+            if _ep % _update_every == 0 or _ep == n_epochs:
+                _pct = 100 * _ep / n_epochs
+                mo.output.replace(mo.Html(
+                    '<div style="position:fixed;top:50%;left:50%;'
+                    'transform:translate(-50%,-50%);background:white;'
+                    'padding:24px 32px;border-radius:12px;'
+                    'box-shadow:0 8px 32px rgba(0,0,0,0.15);z-index:10000;'
+                    'font-family:system-ui;text-align:center;min-width:300px;">'
+                    f'<div style="font-size:15px;color:#333;margin-bottom:12px;">'
+                    f'Training &mdash; epoch {_ep}/{n_epochs}</div>'
+                    '<div style="background:#eee;border-radius:6px;height:10px;'
+                    'overflow:hidden;">'
+                    f'<div style="background:linear-gradient(90deg,#e34a33,#ff6b4a);'
+                    f'height:100%;border-radius:6px;width:{_pct:.0f}%;"></div>'
+                    '</div>'
+                    f'<div style="font-size:13px;color:#666;margin-top:8px;">'
+                    f'loss: {_lv:.3f}</div></div>'
+                ))
         _trained_model, _new_losses, _new_snapshots = train_model(
             _current_model, optimizer, _loss_fn, _x_train, n_epochs,
+            on_step=_on_step,
         )
+        mo.output.replace(mo.Html(''))
         _elapsed = _time.time() - _t0
 
         set_model(_trained_model)
@@ -493,13 +518,14 @@ def _(
 @app.cell(hide_code=True)
 def _(
     alt, jax, jnp, np, pd,
-    T, n_steps, target_name,
+    T, target_name,
     target_means, target_stds, target_weights,
     target_prob, compute_log_prob, flow_forward,
     get_model, get_losses, get_trained, get_snapshots,
     get_train_params, current_params, epoch_slider,
 ):
     _PLOT_W = 700
+    _n_viz_steps = 50  # use more ODE steps than training for smooth visualization
     z_grid = np.linspace(-5, 5, 300)
 
     # --- Compute densities ---
@@ -528,7 +554,7 @@ def _(
 
     if _snap_model is not None:
         _z_jax = jnp.array(z_grid)
-        _log_probs = jax.vmap(lambda x: compute_log_prob(_snap_model, x, T, n_steps))(_z_jax)
+        _log_probs = jax.vmap(lambda x: compute_log_prob(_snap_model, x, T, _n_viz_steps))(_z_jax)
         _learned = np.clip(np.exp(np.array(_log_probs)), 0, None)
         _learned_label = f'Learned (epoch {_snap_epoch})'
         _top_records += [{'z': float(z), 'density': float(d), 'series': _learned_label}
@@ -578,12 +604,12 @@ def _(
         _z0_heat = jnp.linspace(-5, 5, _nz)
 
         def _traj_with_logdet(z0):
-            _dt = T / n_steps
+            _dt = T / _n_viz_steps
             z = z0
             log_det = 0.0
             zs = [z0]
             lds = [0.0]
-            for k in range(n_steps):
+            for k in range(_n_viz_steps):
                 t_k = k * _dt
                 dfz = jax.grad(lambda _z: _snap_model(_z, t_k))(z)
                 z = z + _dt * _snap_model(z, t_k)
@@ -599,10 +625,10 @@ def _(
         _base_lp = -0.5 * np.array(_z0_heat)**2 - 0.5 * np.log(2 * np.pi)
         _dens = np.clip(np.exp(_base_lp[:, None] - _all_lds_np), 0, None)
 
-        _t_vals = np.linspace(0, T, n_steps + 1)
+        _t_vals = np.linspace(0, T, _n_viz_steps + 1)
         _z_reg = np.linspace(-5, 5, _nz)
-        _heat = np.zeros((_nz, n_steps + 1))
-        for _ti in range(n_steps + 1):
+        _heat = np.zeros((_nz, _n_viz_steps + 1))
+        for _ti in range(_n_viz_steps + 1):
             _zpos = _all_zs_np[:, _ti]
             _dvals = _dens[:, _ti]
             _si = np.argsort(_zpos)
@@ -630,7 +656,7 @@ def _(
         # Streamlines
         _n_streams = 30
         _z0_str = jnp.linspace(-3.5, 3.5, _n_streams)
-        _trajs = np.array(jax.vmap(lambda z0: flow_forward(_snap_model, z0, T, n_steps))(_z0_str))
+        _trajs = np.array(jax.vmap(lambda z0: flow_forward(_snap_model, z0, T, _n_viz_steps))(_z0_str))
         _stream_records = []
         for _j in range(_n_streams):
             for _ti in range(len(_t_vals)):
