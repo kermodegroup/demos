@@ -30,6 +30,10 @@ name = "gp-derivative-demo"
 title = "GP with Derivative Observations"
 
 [[demos]]
+name = "bayesian-optimisation-demo"
+title = "Bayesian optimisation"
+
+[[demos]]
 name = "mlp-demo"
 title = "MLP Regression"
 
@@ -38,18 +42,18 @@ name = "neural-ode-demo"
 title = "Neural ODE Solver"
 
 [[demos]]
-name = "normalising-flows-demo"
-title = "Normalising Flows"
-
-[[demos]]
 name = "clustering-demo"
 title = "K-Means and GMM Clustering"
 
 [[demos]]
 name = "pca-demo"
-title = "PCA Explorer — MNIST"
+title = "PCA Explorer"
+i
+[[demos]]
+name = "normalising-flows-demo"
+title = "Normalising Flows"
 
 [[demos]]
 name = "uq-kinetics"
-title = "Uncertainty in Models and Data"
+title = "Uncertainty in Models and Data: Reaction Kinetics"
 type = "demo"
