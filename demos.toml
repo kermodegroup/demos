@@ -38,6 +38,10 @@ name = "neural-ode-demo"
 title = "Neural ODE Solver"
 
 [[demos]]
+name = "normalising-flows-demo"
+title = "Normalising Flows"
+
+[[demos]]
 name = "clustering-demo"
 title = "K-Means and GMM Clustering"
 
