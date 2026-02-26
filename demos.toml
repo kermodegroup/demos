@@ -30,8 +30,8 @@ name = "gp-derivative-demo"
 title = "GP with Derivative Observations"
 
 [[demos]]
-name = "bayesian-optimisation-demo"
-title = "Bayesian optimisation"
+name = "bayesian-optimization-demo"
+title = "Bayesian Optimisation"
 
 [[demos]]
 name = "mlp-demo"
