@@ -48,7 +48,7 @@ title = "K-Means and GMM Clustering"
 [[demos]]
 name = "pca-demo"
 title = "PCA Explorer"
-i
+
 [[demos]]
 name = "normalising-flows-demo"
 title = "Normalising Flows"
