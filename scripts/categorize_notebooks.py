@@ -177,8 +177,8 @@ def main():
             continue
 
         for path in dir_path.rglob("*.py"):
-            # Skip library files
-            if "lib" in path.parts:
+            # Skip library files and private modules (not notebooks)
+            if "lib" in path.parts or path.name.startswith("_"):
                 continue
 
             is_compatible, incompatible_deps = check_wasm_compatible(

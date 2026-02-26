@@ -42,6 +42,10 @@ name = "clustering-demo"
 title = "K-Means and GMM Clustering"
 
 [[demos]]
+name = "pca-demo"
+title = "PCA Explorer — MNIST"
+
+[[demos]]
 name = "uq-kinetics"
 title = "Uncertainty in Models and Data"
 type = "demo"

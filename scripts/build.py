@@ -438,7 +438,7 @@ def main() -> None:
             continue
 
         for path in dir_path.rglob("*.py"):
-            if "lib" not in path.parts:
+            if "lib" not in path.parts and not path.name.startswith("_"):
                 all_notebooks.append(str(path))
 
     if not all_notebooks:
