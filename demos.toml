@@ -50,6 +50,10 @@ name = "pca-demo"
 title = "PCA Explorer"
 
 [[demos]]
+name = "pca-em-demo"
+title = "PCA as an EM Algorithm"
+
+[[demos]]
 name = "normalising-flows-demo"
 title = "Normalising Flows"
 
