@@ -375,13 +375,13 @@ def _(
 
         # --- Legend ---
         _legend_items = [
-            {'label': 'Data points', 'color': 'red'},
-            {'label': 'W (rod)', 'color': 'purple'},
+            {'label': 'Data points', 'color': '#2ca02c'},
+            {'label': 'W (rod)', 'color': 'red'},
         ]
         if show_true_pc.value:
             _legend_items.append({'label': 'True PC', 'color': 'black'})
         if show_projections.value and _Z is not None:
-            _legend_items.append({'label': 'Projections', 'color': '#2ca02c'})
+            _legend_items.append({'label': 'Projections', 'color': 'cyan'})
         if show_springs.value and _Z is not None:
             _legend_items.append({'label': 'Springs', 'color': '#ff7f0e'})
 
@@ -434,7 +434,7 @@ def _(
             'y': [-_t_extent * _W_dir[1], _t_extent * _W_dir[1]],
         })
         _rod_layer = alt.Chart(_rod_df).mark_line(
-            color='purple', strokeWidth=3
+            color='red', strokeWidth=3
         ).encode(
             x=alt.X('x:Q', scale=_x_scale),
             y=alt.Y('y:Q', scale=_y_scale),
@@ -465,7 +465,7 @@ def _(
                 'point_idx': list(range(_N_pts)),
             })
             _proj_layer = alt.Chart(_proj_df).mark_circle(
-                color='#2ca02c', size=80, stroke='darkgreen', strokeWidth=1
+                color='cyan', size=80, stroke='darkblue', strokeWidth=1
             ).encode(
                 x=alt.X('x:Q', scale=_x_scale),
                 y=alt.Y('y:Q', scale=_y_scale),
@@ -492,7 +492,7 @@ def _(
         _hover = alt.selection_point(on='pointerover', nearest=True, fields=['point_idx'])
 
         _data_layer = alt.Chart(_data_df).mark_circle(
-            color='red', size=120, stroke='white', strokeWidth=1
+            color='#2ca02c', size=120, stroke='white', strokeWidth=1
         ).encode(
             x=alt.X('x:Q', scale=_x_scale, title='x\u2081'),
             y=alt.Y('y:Q', scale=_y_scale, title='x\u2082'),
