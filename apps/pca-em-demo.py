@@ -59,6 +59,10 @@ def _(mo):
             height: auto;
         }
 
+        .square-chart-container {
+            width: 100%;
+        }
+
         .app-sidebar-container {
             z-index: 10;
             position: relative;
@@ -199,18 +203,16 @@ def _(np):
 
         return X, W_true
 
-    def e_step(X, W, sigma2):
-        """E-step: compute optimal latent projections z_n.
+    def e_step(X, W):
+        """E-step: orthogonal projection onto W.
 
-        z_n = (W^T W + sigma2 I)^{-1} W^T x_n
-        For D=2, M=1: z_n = (||W||^2 + sigma2)^{-1} (W . x_n)
+        z_n = (W^T W)^{-1} W^T x_n = (W . x_n) / ||W||^2
         """
-        denom = np.dot(W, W) + sigma2
-        Z = X @ W / denom
+        Z = X @ W / np.dot(W, W)
         return Z
 
     def m_step(X, Z):
-        """M-step: compute optimal direction W.
+        """M-step: rotate rod to minimize spring energy.
 
         W_new = (sum_n x_n z_n) / (sum_n z_n^2)
         """
@@ -228,31 +230,24 @@ def _(np):
         cos_angle = np.clip(cos_angle, -1.0, 1.0)
         return float(np.degrees(np.arccos(cos_angle)))
 
-    def estimate_sigma2(X, W, Z):
-        """Estimate noise variance from residuals."""
-        reconstructions = np.outer(Z, W)
-        residuals = X - reconstructions
-        D = X.shape[1]
-        return float(np.sum(residuals ** 2) / (X.shape[0] * D))
-
-    return generate_pca_data, e_step, m_step, compute_spring_energy, compute_angle_to_true, estimate_sigma2
+    return generate_pca_data, e_step, m_step, compute_spring_energy, compute_angle_to_true
 
 
 @app.cell(hide_code=True)
 def _(
     mo, np, get_state, set_state,
-    e_step, m_step, compute_spring_energy, compute_angle_to_true, estimate_sigma2,
+    e_step, m_step, compute_spring_energy, compute_angle_to_true,
 ):
     def on_e_step(_):
         s = get_state()
         if s is None:
             return
-        X, W, sigma2, W_true = s['X'], s['W'], s['sigma2'], s['W_true']
-        Z = e_step(X, W, sigma2)
+        X, W, W_true = s['X'], s['W'], s['W_true']
+        Z = e_step(X, W)
         energy = compute_spring_energy(X, W, Z)
         angle = compute_angle_to_true(W, W_true)
         iteration = s['iteration'] + 1
-        history = s['history'] + [{'step': iteration, 'type': 'E', 'energy': energy, 'angle': angle, 'sigma2': sigma2, 'W_norm': float(np.linalg.norm(W))}]
+        history = s['history'] + [{'step': iteration, 'type': 'E', 'energy': energy, 'angle': angle, 'W_norm': float(np.linalg.norm(W))}]
         set_state({**s, 'Z': Z, 'iteration': iteration, 'last_step': 'E-step', 'history': history})
 
     def on_m_step(_):
@@ -263,37 +258,35 @@ def _(
         if Z is None:
             return
         W_new = m_step(X, Z)
-        sigma2_new = estimate_sigma2(X, W_new, Z)
         energy = compute_spring_energy(X, W_new, Z)
         angle = compute_angle_to_true(W_new, W_true)
         iteration = s['iteration'] + 1
-        history = s['history'] + [{'step': iteration, 'type': 'M', 'energy': energy, 'angle': angle, 'sigma2': sigma2_new, 'W_norm': float(np.linalg.norm(W_new))}]
-        set_state({**s, 'W': W_new, 'sigma2': sigma2_new, 'iteration': iteration, 'last_step': 'M-step', 'history': history})
+        history = s['history'] + [{'step': iteration, 'type': 'M', 'energy': energy, 'angle': angle, 'W_norm': float(np.linalg.norm(W_new))}]
+        set_state({**s, 'W': W_new, 'iteration': iteration, 'last_step': 'M-step', 'history': history})
 
     def on_full_em(_):
         s = get_state()
         if s is None:
             return
-        X, W, sigma2, W_true = s['X'], s['W'], s['sigma2'], s['W_true']
+        X, W, W_true = s['X'], s['W'], s['W_true']
         iteration = s['iteration']
         history = list(s['history'])
 
         # E-step
-        Z = e_step(X, W, sigma2)
+        Z = e_step(X, W)
         energy = compute_spring_energy(X, W, Z)
         angle = compute_angle_to_true(W, W_true)
         iteration += 1
-        history.append({'step': iteration, 'type': 'E', 'energy': energy, 'angle': angle, 'sigma2': sigma2, 'W_norm': float(np.linalg.norm(W))})
+        history.append({'step': iteration, 'type': 'E', 'energy': energy, 'angle': angle, 'W_norm': float(np.linalg.norm(W))})
 
         # M-step
         W_new = m_step(X, Z)
-        sigma2_new = estimate_sigma2(X, W_new, Z)
         energy = compute_spring_energy(X, W_new, Z)
         angle = compute_angle_to_true(W_new, W_true)
         iteration += 1
-        history.append({'step': iteration, 'type': 'M', 'energy': energy, 'angle': angle, 'sigma2': sigma2_new, 'W_norm': float(np.linalg.norm(W_new))})
+        history.append({'step': iteration, 'type': 'M', 'energy': energy, 'angle': angle, 'W_norm': float(np.linalg.norm(W_new))})
 
-        set_state({**s, 'W': W_new, 'Z': Z, 'sigma2': sigma2_new, 'iteration': iteration, 'last_step': 'Full EM', 'history': history})
+        set_state({**s, 'W': W_new, 'Z': Z, 'iteration': iteration, 'last_step': 'Full EM', 'history': history})
 
     def on_reset(_):
         s = get_state()
@@ -302,7 +295,7 @@ def _(
         rng = np.random.default_rng(12345)
         W_init = rng.normal(0, 1, 2)
         W_init = W_init / np.linalg.norm(W_init)
-        set_state({**s, 'W': W_init, 'Z': None, 'sigma2': 1.0, 'iteration': 0, 'last_step': 'Init', 'history': []})
+        set_state({**s, 'W': W_init, 'Z': None, 'iteration': 0, 'last_step': 'Init', 'history': []})
 
     e_step_btn = mo.ui.button(label="E-step", on_click=on_e_step)
     m_step_btn = mo.ui.button(label="M-step", on_click=on_m_step)
@@ -337,7 +330,6 @@ def _(
             'X': _X,
             'W': _W_init,
             'Z': None,
-            'sigma2': 1.0,
             'iteration': 0,
             'last_step': 'Init',
             'history': [],
@@ -371,7 +363,7 @@ def _(
         _x_scale = alt.Scale(domain=[-_data_max, _data_max])
         _y_scale = alt.Scale(domain=[-_data_max, _data_max])
 
-        # Compute projections if Z is available
+        # Compute projections (E-step z values are orthogonal projections)
         if _Z is not None:
             _proj = np.outer(_Z, _W)  # N x 2
             _spring_lengths = np.sqrt(np.sum((_X - _proj) ** 2, axis=1))
@@ -519,7 +511,7 @@ def _(
 
         # --- Combine ---
         main_chart = alt.layer(*_layers).properties(
-            width='container', height=600,
+            width=600, height=600,
             title=f'EM Iteration {_iteration} \u2014 {_last_step}'
         ).configure_axis(
             grid=True, gridOpacity=0.2,
@@ -545,7 +537,6 @@ def _(alt, mo, pd, get_state):
     if _s_conv is not None and len(_s_conv.get('history', [])) > 0:
         _history = _s_conv['history']
         _iteration = _s_conv['iteration']
-        _sigma2_val = _s_conv['sigma2']
 
         # Latest metrics
         _latest = _history[-1]
@@ -558,7 +549,6 @@ def _(alt, mo, pd, get_state):
             <tr><td style="padding: 2px 4px;">Iteration</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">{_iteration}</td></tr>
             <tr><td style="padding: 2px 4px;">Spring energy</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">{_energy_val:.2f}</td></tr>
             <tr><td style="padding: 2px 4px;">Angle to true</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">{_angle_val:.2f}\u00b0</td></tr>
-            <tr><td style="padding: 2px 4px;">\u03c3\u00b2</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">{_sigma2_val:.4f}</td></tr>
             <tr><td style="padding: 2px 4px;">\u2016W\u2016</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">{_w_norm_val:.4f}</td></tr>
         </table>
         '''
@@ -608,7 +598,6 @@ def _(alt, mo, pd, get_state):
             <tr><td style="padding: 2px 4px;">Iteration</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">0</td></tr>
             <tr><td style="padding: 2px 4px;">Spring energy</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">\u2014</td></tr>
             <tr><td style="padding: 2px 4px;">Angle to true</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">\u2014</td></tr>
-            <tr><td style="padding: 2px 4px;">\u03c3\u00b2</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">\u2014</td></tr>
             <tr><td style="padding: 2px 4px;">\u2016W\u2016</td><td style="text-align: right; font-family: monospace; padding: 2px 4px;">\u2014</td></tr>
         </table>
         <p style="font-size: 11px; color: #888; margin-top: 0.5em;">Click E-step or M-step to begin.</p>
@@ -665,7 +654,7 @@ def _(mo, header, main_chart, sidebar):
     mo.Html(f'''
     {header}
     <div class="app-layout">
-        <div class="app-plot">{mo.as_html(main_chart)}</div>
+        <div class="app-plot"><div class="square-chart-container">{mo.as_html(main_chart)}</div></div>
         <div class="app-sidebar-container">
             {sidebar_html}
         </div>
