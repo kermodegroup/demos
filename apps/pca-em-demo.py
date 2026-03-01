@@ -61,6 +61,19 @@ def _(mo):
 
         .square-chart-container {
             width: 100%;
+            max-width: calc(100vh - 80px - 2em);
+            aspect-ratio: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .square-chart-container iframe {
+            position: absolute !important;
+            top: 0;
+            left: 0;
+            width: 100% !important;
+            height: 100% !important;
+            border: none;
         }
 
         .app-sidebar-container {
@@ -511,7 +524,7 @@ def _(
 
         # --- Combine ---
         main_chart = alt.layer(*_layers).properties(
-            width=600, height=600,
+            width='container', height='container',
             title=f'EM Iteration {_iteration} \u2014 {_last_step}'
         ).configure_axis(
             grid=True, gridOpacity=0.2,
@@ -651,10 +664,22 @@ def _(mo, header, main_chart, sidebar):
         {sidebar}
     </div>
     ''')
+    _spec_json = main_chart.to_json()
+    _chart_html = f'''<!DOCTYPE html>
+    <html><head>
+    <script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@6.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@7"></script>
+    <style>html, body {{ margin:0; padding:0; width:100%; height:100%; overflow:hidden; }}
+    #vis {{ width:100%; height:100%; }}</style>
+    </head><body><div id="vis"></div>
+    <script>vegaEmbed('#vis', {_spec_json}, {{actions:true}});</script>
+    </body></html>'''
+    _chart_iframe = mo.iframe(_chart_html)
     mo.Html(f'''
     {header}
     <div class="app-layout">
-        <div class="app-plot"><div class="square-chart-container">{mo.as_html(main_chart)}</div></div>
+        <div class="app-plot"><div class="square-chart-container">{_chart_iframe}</div></div>
         <div class="app-sidebar-container">
             {sidebar_html}
         </div>
