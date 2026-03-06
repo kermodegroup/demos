@@ -832,6 +832,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mograder"
+version = "0.1.0"
+source = { git = "https://github.com/jameskermode/mograder.git#6230b5b8ee051e887befc871e3884f728d5cdc23" }
+dependencies = [
+    { name = "click" },
+    { name = "marimo" },
+]
+
+[[package]]
 name = "msgspec"
 version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1553,6 +1562,9 @@ dependencies = [
 dev = [
     { name = "uv" },
 ]
+grader = [
+    { name = "mograder" },
+]
 jax = [
     { name = "equinox" },
     { name = "jax" },
@@ -1583,6 +1595,7 @@ requires-dist = [
     { name = "jaxlib", marker = "extra == 'jax'" },
     { name = "marimo", specifier = ">=0.19.6" },
     { name = "matplotlib", specifier = "==3.10.1" },
+    { name = "mograder", marker = "extra == 'grader'", git = "https://github.com/jameskermode/mograder.git" },
     { name = "numpy", specifier = "==2.2.5" },
     { name = "numpyro", marker = "extra == 'numpyro'" },
     { name = "optax", marker = "extra == 'jax'" },
@@ -1599,7 +1612,7 @@ requires-dist = [
     { name = "uv", marker = "extra == 'dev'" },
     { name = "uvicorn", marker = "extra == 'server'" },
 ]
-provides-extras = ["jax", "numpyro", "server", "dev"]
+provides-extras = ["jax", "numpyro", "server", "grader", "dev"]
 
 [[package]]
 name = "scipy"
