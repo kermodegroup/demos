@@ -41,6 +41,8 @@ numpyro = [
 server = [
     "fastapi",
     "uvicorn",
+    "httpx",
+    "websockets",
 ]
 dev = [
     "uv",

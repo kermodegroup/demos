@@ -1,14 +1,19 @@
+import asyncio
 import marimo
 import tomllib
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
+import websockets
 
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
 PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
 CONFIG_FILE = Path(__file__).parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
+MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
+FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 
 app = FastAPI()
 
@@ -57,6 +62,29 @@ wasm_notebooks = [
     and d.get("type") != "demo"
     and not d.get("hidden", False)
 ]
+
+
+# Formgrader reverse proxy access control
+grader_enabled = FORMGRADER_USERS_FILE.exists()
+
+
+def _formgrader_allowed_users() -> set[str]:
+    """Read allowed users from file on each call (no restart needed to update)."""
+    if not FORMGRADER_USERS_FILE.exists():
+        return set()
+    return {
+        line.strip()
+        for line in FORMGRADER_USERS_FILE.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+
+def _check_formgrader_access(request: Request) -> str:
+    """Return username if allowed, raise 403 otherwise."""
+    user = request.headers.get("x-remote-user", "")
+    if not user or user not in _formgrader_allowed_users():
+        raise HTTPException(status_code=403, detail="Forbidden: formgrader access required")
+    return user
 
 
 def get_display_title(name):
@@ -117,6 +145,7 @@ def index():
             .wasm {{ background: #d4edda; color: #155724; }}
             .live {{ background: #fff3cd; color: #856404; }}
             .demo {{ background: #d1ecf1; color: #0c5460; }}
+            .grader {{ background: #f8d7da; color: #721c24; }}
             .note {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1em; margin: 1.5em 0; }}
         </style>
     </head>
@@ -129,6 +158,7 @@ def index():
         in the <a href="https://warwick.ac.uk/HetSys">HetSys CDT</a>
         and <a href="https://warwick.ac.uk/pmsc">Predictive Modelling and Scientific Computing MSc</a>.</p>
         <ul>{notebook_links}</ul>
+        {"" if not grader_enabled else '<p><a href="/live/grader/">Formgrader</a> <span class="badge grader">STAFF</span></p>'}
         <div class="note">
             <p><strong>WASM</strong> notebooks run in your browser (no login required).
             <strong>LIVE</strong> notebooks require University of Warwick SSO.
@@ -148,6 +178,101 @@ def wasm_redirect(name: str):
         url=f"{GITHUB_PAGES_BASE}/{name}.html",
         status_code=302
     )
+
+
+@app.get("/live/debug-headers")
+def debug_headers(request: Request):
+    """Temporary: check what headers Apache passes under /live/."""
+    return {
+        "headers": dict(request.headers),
+        "x-remote-user": request.headers.get("x-remote-user", "(not set)"),
+    }
+
+
+# Formgrader reverse proxy routes (must be before app.mount("/live", ...))
+PROXY_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+
+
+@app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
+async def formgrader_proxy(request: Request, path: str):
+    """Reverse proxy HTTP requests to formgrader on moriarty."""
+    user = _check_formgrader_access(request)
+
+    # Build target URL
+    target_url = f"{MORIARTY_FORMGRADER}/live/grader/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+
+    # Forward headers, replacing Host and adding X-Remote-User
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers["x-remote-user"] = user
+
+    body = await request.body()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body,
+            )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502,
+            detail="Formgrader server on moriarty.scrtp.warwick.ac.uk is not responding",
+        )
+
+    # Pass through response, excluding hop-by-hop headers
+    excluded = {"transfer-encoding", "connection", "keep-alive"}
+    response_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() not in excluded
+    }
+    return Response(content=resp.content, status_code=resp.status_code, headers=response_headers)
+
+
+@app.websocket("/live/grader/{path:path}")
+async def formgrader_ws_proxy(ws: WebSocket, path: str):
+    """Reverse proxy WebSocket connections to formgrader on moriarty."""
+    user = ws.headers.get("x-remote-user", "")
+    if not user or user not in _formgrader_allowed_users():
+        await ws.close(code=4003, reason="Forbidden")
+        return
+
+    await ws.accept()
+
+    # Build target WebSocket URL
+    target_url = f"ws://moriarty.scrtp.warwick.ac.uk:2718/live/grader/{path}"
+    if ws.url.query:
+        target_url += f"?{ws.url.query}"
+
+    extra_headers = {"x-remote-user": user}
+
+    try:
+        async with websockets.connect(target_url, additional_headers=extra_headers) as upstream:
+
+            async def client_to_upstream():
+                try:
+                    while True:
+                        data = await ws.receive_text()
+                        await upstream.send(data)
+                except WebSocketDisconnect:
+                    await upstream.close()
+
+            async def upstream_to_client():
+                try:
+                    async for message in upstream:
+                        if isinstance(message, str):
+                            await ws.send_text(message)
+                        else:
+                            await ws.send_bytes(message)
+                except websockets.ConnectionClosed:
+                    await ws.close()
+
+            await asyncio.gather(client_to_upstream(), upstream_to_client())
+    except (OSError, websockets.InvalidURI, websockets.InvalidHandshake):
+        await ws.close(code=1011, reason="Upstream connection failed")
 
 
 # Mount marimo server at /live (SSO protected path)
