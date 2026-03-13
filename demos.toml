@@ -38,6 +38,10 @@ name = "mlp-demo"
 title = "MLP Regression"
 
 [[demos]]
+name = "bnn-demo"
+title = "BNN Regression (Variational Inference)"
+
+[[demos]]
 name = "neural-ode-demo"
 title = "Neural ODE Solver"
 
