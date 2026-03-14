@@ -235,6 +235,10 @@ async def formgrader_proxy(request: Request, path: str):
 @app.websocket("/live/grader/{path:path}")
 async def formgrader_ws_proxy(ws: WebSocket, path: str):
     """Reverse proxy WebSocket connections to formgrader on moriarty."""
+    import logging
+
+    logger = logging.getLogger("uvicorn.error")
+
     user = ws.headers.get("x-remote-user", "")
     if not user or user not in _formgrader_allowed_users():
         await ws.close(code=4003, reason="Forbidden")
@@ -250,7 +254,13 @@ async def formgrader_ws_proxy(ws: WebSocket, path: str):
     extra_headers = {"x-remote-user": user}
 
     try:
-        async with websockets.connect(target_url, additional_headers=extra_headers) as upstream:
+        async with websockets.connect(
+            target_url,
+            additional_headers=extra_headers,
+            max_size=None,  # no message size limit (default 1MB is too small)
+            ping_interval=20,
+            ping_timeout=20,
+        ) as upstream:
 
             async def client_to_upstream():
                 try:
@@ -258,7 +268,7 @@ async def formgrader_ws_proxy(ws: WebSocket, path: str):
                         data = await ws.receive_text()
                         await upstream.send(data)
                 except WebSocketDisconnect:
-                    await upstream.close()
+                    pass
 
             async def upstream_to_client():
                 try:
@@ -268,11 +278,24 @@ async def formgrader_ws_proxy(ws: WebSocket, path: str):
                         else:
                             await ws.send_bytes(message)
                 except websockets.ConnectionClosed:
-                    await ws.close()
+                    pass
 
-            await asyncio.gather(client_to_upstream(), upstream_to_client())
-    except (OSError, websockets.InvalidURI, websockets.InvalidHandshake):
-        await ws.close(code=1011, reason="Upstream connection failed")
+            tasks = [
+                asyncio.create_task(client_to_upstream()),
+                asyncio.create_task(upstream_to_client()),
+            ]
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+    except Exception:
+        logger.exception("formgrader WS proxy error")
+    finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
 
 # Mount marimo server at /live (SSO protected path)
