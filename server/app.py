@@ -206,15 +206,6 @@ _WASM_CONTENT_TYPES = {
 }
 
 
-@app.get("/live/student/")
-def student_dashboard():
-    """Serve the student dashboard WASM app."""
-    index_file = STUDENT_DASHBOARD_DIR / "index.html"
-    if not index_file.is_file():
-        raise HTTPException(404, detail="Student dashboard not deployed yet")
-    return HTMLResponse(index_file.read_text())
-
-
 @app.get("/live/student/wasm/{name}/{path:path}")
 def student_wasm_assignment(name: str, path: str):
     """Serve WASM-exported assignment files from ~/student-wasm/."""
@@ -265,6 +256,22 @@ async def student_api_proxy(request: Request, path: str):
     return Response(
         content=resp.content, status_code=resp.status_code, headers=response_headers
     )
+
+
+@app.get("/live/student/{path:path}")
+def student_dashboard_files(path: str):
+    """Serve student dashboard WASM app and its static assets."""
+    file_path = STUDENT_DASHBOARD_DIR / (path or "index.html")
+    if not path or path == "/":
+        file_path = STUDENT_DASHBOARD_DIR / "index.html"
+    if not file_path.is_file() or not file_path.resolve().is_relative_to(
+        STUDENT_DASHBOARD_DIR
+    ):
+        raise HTTPException(404)
+    content_type = _WASM_CONTENT_TYPES.get(
+        file_path.suffix, "application/octet-stream"
+    )
+    return Response(content=file_path.read_bytes(), media_type=content_type)
 
 
 # --- Formgrader reverse proxy routes (must be before app.mount("/live", ...)) ---
