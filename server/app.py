@@ -14,6 +14,8 @@ CONFIG_FILE = Path(__file__).parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
+STUDENT_WASM_DIR = Path.home() / "student-wasm"
+STUDENT_DASHBOARD_DIR = Path(__file__).parent / "student"
 
 app = FastAPI()
 
@@ -158,6 +160,7 @@ def index():
         in the <a href="https://warwick.ac.uk/HetSys">HetSys CDT</a>
         and <a href="https://warwick.ac.uk/pmsc">Predictive Modelling and Scientific Computing MSc</a>.</p>
         <ul>{notebook_links}</ul>
+        <p><a href="/live/student/">Student Dashboard</a> <span class="badge live">STUDENT</span></p>
         {"" if not grader_enabled else '<p><a href="/live/grader/">Formgrader</a> <span class="badge grader">STAFF</span></p>'}
         <div class="note">
             <p><strong>WASM</strong> notebooks run in your browser (no login required).
@@ -189,8 +192,82 @@ def debug_headers(request: Request):
     }
 
 
-# Formgrader reverse proxy routes (must be before app.mount("/live", ...))
+# --- Student dashboard routes (must be before app.mount("/live", ...)) ---
+
 PROXY_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+
+# Content type mapping for WASM files
+_WASM_CONTENT_TYPES = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".wasm": "application/wasm",
+    ".json": "application/json",
+}
+
+
+@app.get("/live/student/")
+def student_dashboard():
+    """Serve the student dashboard WASM app."""
+    index_file = STUDENT_DASHBOARD_DIR / "index.html"
+    if not index_file.is_file():
+        raise HTTPException(404, detail="Student dashboard not deployed yet")
+    return HTMLResponse(index_file.read_text())
+
+
+@app.get("/live/student/wasm/{name}/{path:path}")
+def student_wasm_assignment(name: str, path: str):
+    """Serve WASM-exported assignment files from ~/student-wasm/."""
+    file_path = STUDENT_WASM_DIR / name / (path or "index.html")
+    if not file_path.is_file() or not file_path.resolve().is_relative_to(
+        STUDENT_WASM_DIR
+    ):
+        raise HTTPException(404)
+    content_type = _WASM_CONTENT_TYPES.get(
+        file_path.suffix, "application/octet-stream"
+    )
+    return Response(content=file_path.read_bytes(), media_type=content_type)
+
+
+@app.api_route("/live/student/api/{path:path}", methods=PROXY_METHODS)
+async def student_api_proxy(request: Request, path: str):
+    """Proxy student API requests to moriarty (any SSO user)."""
+    target_url = f"{MORIARTY_FORMGRADER}/live/grader/student/api/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    user = request.headers.get("x-remote-user", "")
+    if user:
+        headers["x-remote-user"] = user
+
+    body = await request.body()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body,
+            )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502,
+            detail="Student API server on moriarty is not responding",
+        )
+
+    excluded = {"transfer-encoding", "connection", "keep-alive"}
+    response_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() not in excluded
+    }
+    return Response(
+        content=resp.content, status_code=resp.status_code, headers=response_headers
+    )
+
+
+# --- Formgrader reverse proxy routes (must be before app.mount("/live", ...)) ---
 
 
 @app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
