@@ -258,6 +258,12 @@ async def student_api_proxy(request: Request, path: str):
     )
 
 
+@app.get("/live/student")
+def student_dashboard_redirect():
+    """Redirect /live/student to /live/student/ for correct relative paths."""
+    return RedirectResponse(url="/live/student/", status_code=301)
+
+
 @app.get("/live/student/{path:path}")
 def student_dashboard_files(path: str):
     """Serve student dashboard WASM app and its static assets."""
