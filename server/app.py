@@ -15,6 +15,7 @@ if not CONFIG_FILE.exists():
     CONFIG_FILE = Path(__file__).parent.parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MOLAB_BASE = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
+MOLAB_PARAMS = "/wasm?include-code=false"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 STUDENT_WASM_DIR = Path.home() / "student-wasm"
@@ -73,9 +74,9 @@ wasm_notebooks = [
 # See https://docs.marimo.io/guides/molab/#embed-notebooks-from-github
 molab_urls: dict[str, str] = {}
 for name in live_notebooks:
-    molab_urls[name] = f"{MOLAB_BASE}/notebooks/{name}.py"
+    molab_urls[name] = f"{MOLAB_BASE}/notebooks/{name}.py{MOLAB_PARAMS}"
 for name in wasm_notebooks:
-    molab_urls[name] = f"{MOLAB_BASE}/apps/{name}.py"
+    molab_urls[name] = f"{MOLAB_BASE}/apps/{name}.py{MOLAB_PARAMS}"
 
 # Formgrader reverse proxy access control
 grader_enabled = FORMGRADER_USERS_FILE.exists()

@@ -46,13 +46,14 @@ def main():
     # Identify live notebooks from config (those not in WASM output)
     wasm_names = {n for n, _ in notebooks}
     molab_base = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
+    molab_params = "/wasm?include-code=false"
     live_notebooks = []
     for d in demo_config:
         name = d["name"]
         if name in wasm_names or d.get("hidden", False) or d.get("type") == "demo":
             continue
         title = d.get("title", name.replace("-", " ").title())
-        molab_url = f"{molab_base}/notebooks/{name}.py"
+        molab_url = f"{molab_base}/notebooks/{name}.py{molab_params}"
         live_notebooks.append((name, title, molab_url))
 
     live_notebooks.sort(
@@ -62,7 +63,7 @@ def main():
     # Generate HTML
     wasm_links = "\n".join(
         f'        <li><a href="{name}.html">{title}</a> <span class="badge wasm">WASM</span>'
-        f' <a href="{molab_base}/apps/{name}.py" class="molab-link" title="Open in molab (editable)">molab</a></li>'
+        f' <a href="{molab_base}/apps/{name}.py{molab_params}" class="molab-link" title="Open in molab (no code)">molab</a></li>'
         for name, title in notebooks
     )
     live_links = "\n".join(
