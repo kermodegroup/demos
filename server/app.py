@@ -7,17 +7,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import websockets
-from lzstring import LZString
-
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
-APPS_DIR = Path(__file__).parent.parent / "apps"
 PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
 # demos.toml lives alongside app.py on the server, but one level up in the repo
 CONFIG_FILE = Path(__file__).parent / "demos.toml"
 if not CONFIG_FILE.exists():
     CONFIG_FILE = Path(__file__).parent.parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
-MOLAB_BASE = "https://molab.marimo.io/new/wasm/#code"
+MOLAB_BASE = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 STUDENT_WASM_DIR = Path.home() / "student-wasm"
@@ -72,26 +69,13 @@ wasm_notebooks = [
 ]
 
 
-# Generate molab URLs for all notebooks (live + wasm)
-# Skip notebooks with compressed URL > 2MB as that exceeds most browser limits
-_lz = LZString()
-_MOLAB_SOURCE_LIMIT = 2_000_000
+# Build molab URLs for all notebooks via GitHub integration
+# See https://docs.marimo.io/guides/molab/#embed-notebooks-from-github
 molab_urls: dict[str, str] = {}
-
-for notebook in sorted(NOTEBOOKS_DIR.glob("*.py")):
-    source = notebook.read_text()
-    if len(source) <= _MOLAB_SOURCE_LIMIT:
-        compressed = _lz.compressToEncodedURIComponent(source)
-        molab_urls[notebook.stem] = f"{MOLAB_BASE}/{compressed}"
-
-if APPS_DIR.exists():
-    for notebook in sorted(APPS_DIR.glob("*.py")):
-        if notebook.name.startswith("_"):
-            continue
-        source = notebook.read_text()
-        if len(source) <= _MOLAB_SOURCE_LIMIT:
-            compressed = _lz.compressToEncodedURIComponent(source)
-            molab_urls[notebook.stem] = f"{MOLAB_BASE}/{compressed}"
+for name in live_notebooks:
+    molab_urls[name] = f"{MOLAB_BASE}/notebooks/{name}.py"
+for name in wasm_notebooks:
+    molab_urls[name] = f"{MOLAB_BASE}/apps/{name}.py"
 
 # Formgrader reverse proxy access control
 grader_enabled = FORMGRADER_USERS_FILE.exists()
@@ -218,11 +202,11 @@ def wasm_redirect(name: str):
     )
 
 
-# Redirect /molab/{name} to molab.marimo.io with compressed source
+# Redirect /molab/{name} to molab.marimo.io via GitHub integration
 @app.get("/molab/{name}/")
 @app.get("/molab/{name}")
 def molab_redirect(name: str):
-    """Redirect to molab.marimo.io with the notebook source encoded in the URL."""
+    """Redirect to molab.marimo.io with the notebook loaded from GitHub."""
     if name not in molab_urls:
         raise HTTPException(status_code=404, detail=f"Notebook '{name}' not found")
     return RedirectResponse(url=molab_urls[name], status_code=302)
