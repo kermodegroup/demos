@@ -74,7 +74,7 @@ wasm_notebooks = [
 # See https://docs.marimo.io/guides/molab/#embed-notebooks-from-github
 molab_urls: dict[str, str] = {}
 for name in live_notebooks:
-    molab_urls[name] = f"{MOLAB_BASE}/notebooks/{name}.py{MOLAB_PARAMS}"
+    molab_urls[name] = f"{MOLAB_BASE}/notebooks/{name}.py"
 for name in wasm_notebooks:
     molab_urls[name] = f"{MOLAB_BASE}/apps/{name}.py{MOLAB_PARAMS}"
 

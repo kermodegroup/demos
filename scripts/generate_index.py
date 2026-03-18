@@ -53,7 +53,7 @@ def main():
         if name in wasm_names or d.get("hidden", False) or d.get("type") == "demo":
             continue
         title = d.get("title", name.replace("-", " ").title())
-        molab_url = f"{molab_base}/notebooks/{name}.py{molab_params}"
+        molab_url = f"{molab_base}/notebooks/{name}.py"
         live_notebooks.append((name, title, molab_url))
 
     live_notebooks.sort(
