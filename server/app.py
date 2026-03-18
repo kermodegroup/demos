@@ -42,12 +42,12 @@ for notebook in sorted(NOTEBOOKS_DIR.glob("*.py")):
 
 # Create marimo server for public demos (mounted at /demos)
 demo_server = marimo.create_asgi_app()
-public_demos = []
+public_demos = []  # list of (name, relative_path) tuples
 if PRESENTATIONS_DIR.exists():
     for notebook in sorted(PRESENTATIONS_DIR.glob("*/*.py")):
         name = notebook.parent.name
         demo_server = demo_server.with_app(path=f"/{name}", root=str(notebook))
-        public_demos.append(name)
+        public_demos.append((name, f"presentations/{name}/{notebook.name}"))
 
 # Load demo config
 demo_config = []
@@ -77,6 +77,8 @@ for name in live_notebooks:
     molab_urls[name] = f"{MOLAB_BASE}/notebooks/{name}.py"
 for name in wasm_notebooks:
     molab_urls[name] = f"{MOLAB_BASE}/apps/{name}.py{MOLAB_PARAMS}"
+for name, rel_path in public_demos:
+    molab_urls[name] = f"{MOLAB_BASE}/{rel_path}"
 
 # Formgrader reverse proxy access control
 grader_enabled = FORMGRADER_USERS_FILE.exists()
@@ -131,7 +133,7 @@ def index():
         all_notebooks.append((name, f"/wasm/{name}/", "wasm"))
 
     # Add public demos (served at /demos)
-    for name in public_demos:
+    for name, _ in public_demos:
         all_notebooks.append((name, f"/demos/{name}/", "demo"))
 
     # Sort by config order, then alphabetically
