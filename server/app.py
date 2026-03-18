@@ -12,7 +12,10 @@ from lzstring import LZString
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
 APPS_DIR = Path(__file__).parent.parent / "apps"
 PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
-CONFIG_FILE = Path(__file__).parent.parent / "demos.toml"
+# demos.toml lives alongside app.py on the server, but one level up in the repo
+CONFIG_FILE = Path(__file__).parent / "demos.toml"
+if not CONFIG_FILE.exists():
+    CONFIG_FILE = Path(__file__).parent.parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MOLAB_BASE = "https://molab.marimo.io/new/wasm/#code"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
