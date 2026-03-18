@@ -43,6 +43,7 @@ server = [
     "uvicorn",
     "httpx",
     "websockets",
+    "lzstring",
 ]
 dev = [
     "uv",

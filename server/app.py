@@ -7,11 +7,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import websockets
+from lzstring import LZString
 
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
+APPS_DIR = Path(__file__).parent.parent / "apps"
 PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
-CONFIG_FILE = Path(__file__).parent / "demos.toml"
+CONFIG_FILE = Path(__file__).parent.parent / "demos.toml"
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
+MOLAB_BASE = "https://molab.marimo.io/new/wasm/#code"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 STUDENT_WASM_DIR = Path.home() / "student-wasm"
@@ -65,6 +68,27 @@ wasm_notebooks = [
     and not d.get("hidden", False)
 ]
 
+
+# Generate molab URLs for all notebooks (live + wasm)
+# Skip notebooks with compressed URL > 2MB as that exceeds most browser limits
+_lz = LZString()
+_MOLAB_SOURCE_LIMIT = 2_000_000
+molab_urls: dict[str, str] = {}
+
+for notebook in sorted(NOTEBOOKS_DIR.glob("*.py")):
+    source = notebook.read_text()
+    if len(source) <= _MOLAB_SOURCE_LIMIT:
+        compressed = _lz.compressToEncodedURIComponent(source)
+        molab_urls[notebook.stem] = f"{MOLAB_BASE}/{compressed}"
+
+if APPS_DIR.exists():
+    for notebook in sorted(APPS_DIR.glob("*.py")):
+        if notebook.name.startswith("_"):
+            continue
+        source = notebook.read_text()
+        if len(source) <= _MOLAB_SOURCE_LIMIT:
+            compressed = _lz.compressToEncodedURIComponent(source)
+            molab_urls[notebook.stem] = f"{MOLAB_BASE}/{compressed}"
 
 # Formgrader reverse proxy access control
 grader_enabled = FORMGRADER_USERS_FILE.exists()
@@ -127,7 +151,9 @@ def index():
 
     notebook_links = "".join(
         f'<li><a href="{url}">{get_display_title(name)}</a>'
-        f'<span class="badge {badge_type}">{badge_type.upper()}</span></li>'
+        f'<span class="badge {badge_type}">{badge_type.upper()}</span>'
+        + (f'<a href="/molab/{name}/" class="molab-link" title="Open in molab (no login required)">molab</a>' if name in molab_urls else '')
+        + '</li>'
         for name, url, badge_type in all_notebooks
     )
 
@@ -148,6 +174,8 @@ def index():
             .live {{ background: #fff3cd; color: #856404; }}
             .demo {{ background: #d1ecf1; color: #0c5460; }}
             .grader {{ background: #f8d7da; color: #721c24; }}
+            .molab-link {{ font-size: 0.75em; padding: 2px 6px; border-radius: 3px; margin-left: 6px; background: #e8d5f5; color: #5f259f; text-decoration: none; }}
+            .molab-link:hover {{ background: #d4b8eb; text-decoration: none; }}
             .note {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1em; margin: 1.5em 0; }}
         </style>
     </head>
@@ -166,6 +194,10 @@ def index():
             <p><strong>WASM</strong> notebooks run in your browser (no login required).
             <strong>LIVE</strong> notebooks require University of Warwick SSO.
             <strong>DEMO</strong> presentations are public (no login required).</p>
+            <p><strong style="color: #5f259f;">molab</strong> links open notebooks in
+            <a href="https://docs.marimo.io/guides/molab/">marimo's free cloud environment</a> &mdash;
+            no login or installation required. Useful for external collaborators
+            and students without a Warwick account.</p>
         </div>
     </body>
     </html>
@@ -181,6 +213,16 @@ def wasm_redirect(name: str):
         url=f"{GITHUB_PAGES_BASE}/{name}.html",
         status_code=302
     )
+
+
+# Redirect /molab/{name} to molab.marimo.io with compressed source
+@app.get("/molab/{name}/")
+@app.get("/molab/{name}")
+def molab_redirect(name: str):
+    """Redirect to molab.marimo.io with the notebook source encoded in the URL."""
+    if name not in molab_urls:
+        raise HTTPException(status_code=404, detail=f"Notebook '{name}' not found")
+    return RedirectResponse(url=molab_urls[name], status_code=302)
 
 
 @app.get("/live/debug-headers")
