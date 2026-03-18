@@ -43,10 +43,33 @@ def main():
         key=lambda x: (config_order.index(x[0]) if x[0] in config_order else 999, x[0])
     )
 
+    # Identify live notebooks from config (those not in WASM output)
+    wasm_names = {n for n, _ in notebooks}
+    molab_base = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
+    live_notebooks = []
+    for d in demo_config:
+        name = d["name"]
+        if name in wasm_names or d.get("hidden", False) or d.get("type") == "demo":
+            continue
+        title = d.get("title", name.replace("-", " ").title())
+        molab_url = f"{molab_base}/notebooks/{name}.py"
+        live_notebooks.append((name, title, molab_url))
+
+    live_notebooks.sort(
+        key=lambda x: (config_order.index(x[0]) if x[0] in config_order else 999, x[0])
+    )
+
     # Generate HTML
-    links = "\n".join(
-        f'        <li><a href="{name}.html">{title}</a> <span class="badge wasm">WASM</span></li>'
+    wasm_links = "\n".join(
+        f'        <li><a href="{name}.html">{title}</a> <span class="badge wasm">WASM</span>'
+        f' <a href="{molab_base}/apps/{name}.py" class="molab-link" title="Open in molab (editable)">molab</a></li>'
         for name, title in notebooks
+    )
+    live_links = "\n".join(
+        f'        <li><a href="{molab_url}" class="molab-link-primary">{title}</a>'
+        f' <span class="badge live">LIVE</span>'
+        f' <a href="{molab_url}" class="molab-link" title="Open in molab (no login required)">molab</a></li>'
+        for _, title, molab_url in live_notebooks
     )
 
     html = f"""<!DOCTYPE html>
@@ -63,6 +86,10 @@ def main():
         .badge {{ font-size: 0.7em; padding: 2px 6px; border-radius: 3px; margin-left: 8px; }}
         .wasm {{ background: #d4edda; color: #155724; }}
         .live {{ background: #fff3cd; color: #856404; }}
+        .molab-link {{ font-size: 0.75em; padding: 2px 6px; border-radius: 3px; margin-left: 6px; background: #e8d5f5; color: #5f259f; text-decoration: none; }}
+        .molab-link:hover {{ background: #d4b8eb; text-decoration: none; }}
+        .molab-link-primary {{ color: #0066cc; text-decoration: none; font-size: 1.1em; }}
+        .molab-link-primary:hover {{ text-decoration: underline; }}
         .note {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1em; margin: 1.5em 0; }}
     </style>
 </head>
@@ -72,16 +99,23 @@ def main():
     Developed by <a href="https://warwick.ac.uk/jrkermode">James Kermode</a>.</p>
 
     <h2>Interactive Demos (WASM)</h2>
-    <p>These run entirely in your browser - no server required.</p>
+    <p>These run entirely in your browser &mdash; no server required.</p>
     <ul>
-{links}
+{wasm_links}
+    </ul>
+
+    <h2>Live Notebooks</h2>
+    <p>These require JAX or other native dependencies.
+    Available at <a href="https://sciml.warwick.ac.uk/">sciml.warwick.ac.uk</a> (Warwick SSO)
+    or via <strong style="color: #5f259f;">molab</strong> links below (no login required).</p>
+    <ul>
+{live_links}
     </ul>
 
     <div class="note">
-        <h3>Live Notebooks</h3>
-        <p>Demos requiring JAX or other native dependencies are available at
-        <a href="https://sciml.warwick.ac.uk/">sciml.warwick.ac.uk</a>
-        (University of Warwick SSO required).</p>
+        <p><strong style="color: #5f259f;">molab</strong> links open notebooks in
+        <a href="https://docs.marimo.io/guides/molab/">marimo's free cloud environment</a> &mdash;
+        no login or installation required.</p>
     </div>
 </body>
 </html>
