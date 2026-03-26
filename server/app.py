@@ -248,6 +248,9 @@ async def _proxy_http(
 
     headers = dict(request.headers)
     headers.pop("host", None)
+    # Strip proxy headers so upstream sees the connection as coming from localhost
+    for h in ("x-forwarded-for", "x-forwarded-host", "x-forwarded-server", "x-real-ip"):
+        headers.pop(h, None)
     headers["x-remote-user"] = user
 
     body = await request.body()
