@@ -18,7 +18,7 @@ GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MOLAB_BASE = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
 MOLAB_PARAMS = "/wasm?include-code=false"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
-MORIARTY_HUB = "http://localhost:18080"  # SSH tunnel to mograder.warwick.cloud (RONIN)
+MORIARTY_HUB = "http://localhost:18080"  # SSH tunnel to sciml.warwick.cloud (RONIN)
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 
 app = FastAPI()
@@ -240,6 +240,7 @@ async def _proxy_http(
     *,
     timeout: float = 30.0,
     service_name: str = "upstream",
+    error_html: str | None = None,
 ) -> Response:
     """Forward an HTTP request to an upstream server and return its response."""
     target_url = f"{upstream_base}/{path}"
@@ -264,9 +265,11 @@ async def _proxy_http(
                 content=body,
             )
     except httpx.ConnectError:
+        if error_html:
+            return HTMLResponse(content=error_html, status_code=502)
         raise HTTPException(
             status_code=502,
-            detail=f"{service_name} server on moriarty is not responding",
+            detail=f"{service_name} server is not responding",
         )
 
     response_headers = {
@@ -371,6 +374,33 @@ async def formgrader_ws_proxy(ws: WebSocket, path: str):
 
 # --- Hub reverse proxy routes (under /live/hub for SSO protection) ---
 
+_HUB_DOWN_HTML = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Notebook Server Offline</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 80px auto; padding: 20px; text-align: center; }
+        h1 { color: #5f259f; }
+        .message { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 1.5em; margin: 2em 0; }
+        a { color: #0066cc; }
+        .retry { margin-top: 2em; }
+        .retry a { background: #5f259f; color: white; padding: 10px 24px; border-radius: 6px; text-decoration: none; }
+        .retry a:hover { background: #4a1d7a; }
+    </style>
+</head>
+<body>
+    <h1>Notebook Server Offline</h1>
+    <div class="message">
+        <p>The notebook editing server is currently <strong>not running</strong>.</p>
+        <p>This is expected outside of active assignment periods.</p>
+        <p>Please ask your instructor to start it up, then try again.</p>
+    </div>
+    <div class="retry">
+        <a href="javascript:location.reload()">Retry</a>
+    </div>
+</body>
+</html>"""
+
 
 @app.get("/live/hub")
 async def hub_redirect():
@@ -380,17 +410,18 @@ async def hub_redirect():
 
 @app.api_route("/live/hub/{path:path}", methods=PROXY_METHODS)
 async def hub_proxy(request: Request, path: str):
-    """Reverse proxy HTTP requests to mograder hub on moriarty."""
+    """Reverse proxy HTTP requests to mograder hub on RONIN."""
     user = _require_sso_user(request)
     return await _proxy_http(
         request, MORIARTY_HUB, path, user,
         timeout=60.0, service_name="Hub",
+        error_html=_HUB_DOWN_HTML,
     )
 
 
 @app.websocket("/live/hub/{path:path}")
 async def hub_ws_proxy(ws: WebSocket, path: str):
-    """Reverse proxy WebSocket connections to mograder hub on moriarty."""
+    """Reverse proxy WebSocket connections to mograder hub on RONIN."""
     user = ws.headers.get("x-remote-user", "")
     if not user:
         await ws.close(code=4003, reason="Forbidden")
