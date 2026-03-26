@@ -18,7 +18,7 @@ GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MOLAB_BASE = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
 MOLAB_PARAMS = "/wasm?include-code=false"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
-MORIARTY_HUB = "http://moriarty.scrtp.warwick.ac.uk:8080"
+MORIARTY_HUB = "http://localhost:18080"  # SSH tunnel to mograder.warwick.cloud (RONIN)
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 
 app = FastAPI()
@@ -393,7 +393,7 @@ async def hub_ws_proxy(ws: WebSocket, path: str):
         await ws.close(code=4003, reason="Forbidden")
         return
     await _proxy_ws(
-        ws, "ws://moriarty.scrtp.warwick.ac.uk:8080", path, user,
+        ws, "ws://localhost:18080", path, user,
         service_name="hub",
     )
 
