@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSoc
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
+import logging
 import websockets
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
 PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
@@ -17,6 +18,7 @@ GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MOLAB_BASE = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
 MOLAB_PARAMS = "/wasm?include-code=false"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
+MORIARTY_HUB = "http://moriarty.scrtp.warwick.ac.uk:8080"
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 
 app = FastAPI()
@@ -222,22 +224,28 @@ def debug_headers(request: Request):
 
 
 PROXY_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+_HOP_BY_HOP = {"transfer-encoding", "connection", "keep-alive"}
+
+_proxy_logger = logging.getLogger("uvicorn.error")
 
 
-# --- Formgrader reverse proxy routes (must be before app.mount("/live", ...)) ---
+# --- Shared reverse proxy helpers ---
 
 
-@app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
-async def formgrader_proxy(request: Request, path: str):
-    """Reverse proxy HTTP requests to formgrader on moriarty."""
-    user = _check_formgrader_access(request)
-
-    # Build target URL
-    target_url = f"{MORIARTY_FORMGRADER}/live/grader/{path}"
+async def _proxy_http(
+    request: Request,
+    upstream_base: str,
+    path: str,
+    user: str,
+    *,
+    timeout: float = 30.0,
+    service_name: str = "upstream",
+) -> Response:
+    """Forward an HTTP request to an upstream server and return its response."""
+    target_url = f"{upstream_base}/{path}"
     if request.url.query:
         target_url += f"?{request.url.query}"
 
-    # Forward headers, replacing Host and adding X-Remote-User
     headers = dict(request.headers)
     headers.pop("host", None)
     headers["x-remote-user"] = user
@@ -245,7 +253,7 @@ async def formgrader_proxy(request: Request, path: str):
     body = await request.body()
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.request(
                 method=request.method,
                 url=target_url,
@@ -255,43 +263,35 @@ async def formgrader_proxy(request: Request, path: str):
     except httpx.ConnectError:
         raise HTTPException(
             status_code=502,
-            detail="Formgrader server on moriarty.scrtp.warwick.ac.uk is not responding",
+            detail=f"{service_name} server on moriarty is not responding",
         )
 
-    # Pass through response, excluding hop-by-hop headers
-    excluded = {"transfer-encoding", "connection", "keep-alive"}
     response_headers = {
-        k: v for k, v in resp.headers.items() if k.lower() not in excluded
+        k: v for k, v in resp.headers.items() if k.lower() not in _HOP_BY_HOP
     }
     return Response(content=resp.content, status_code=resp.status_code, headers=response_headers)
 
 
-@app.websocket("/live/grader/{path:path}")
-async def formgrader_ws_proxy(ws: WebSocket, path: str):
-    """Reverse proxy WebSocket connections to formgrader on moriarty."""
-    import logging
-
-    logger = logging.getLogger("uvicorn.error")
-
-    user = ws.headers.get("x-remote-user", "")
-    if not user or user not in _formgrader_allowed_users():
-        await ws.close(code=4003, reason="Forbidden")
-        return
-
+async def _proxy_ws(
+    ws: WebSocket,
+    upstream_ws_url: str,
+    path: str,
+    user: str,
+    *,
+    service_name: str = "upstream",
+) -> None:
+    """Bidirectional WebSocket relay to an upstream server."""
     await ws.accept()
 
-    # Build target WebSocket URL
-    target_url = f"ws://moriarty.scrtp.warwick.ac.uk:2718/live/grader/{path}"
+    target_url = f"{upstream_ws_url}/{path}"
     if ws.url.query:
         target_url += f"?{ws.url.query}"
-
-    extra_headers = {"x-remote-user": user}
 
     try:
         async with websockets.connect(
             target_url,
-            additional_headers=extra_headers,
-            max_size=None,  # no message size limit (default 1MB is too small)
+            additional_headers={"x-remote-user": user},
+            max_size=None,
             ping_interval=20,
             ping_timeout=20,
         ) as upstream:
@@ -318,18 +318,84 @@ async def formgrader_ws_proxy(ws: WebSocket, path: str):
                 asyncio.create_task(client_to_upstream()),
                 asyncio.create_task(upstream_to_client()),
             ]
-            done, pending = await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 tasks, return_when=asyncio.FIRST_COMPLETED
             )
             for task in pending:
                 task.cancel()
     except Exception:
-        logger.exception("formgrader WS proxy error")
+        _proxy_logger.exception("%s WS proxy error", service_name)
     finally:
         try:
             await ws.close()
         except Exception:
             pass
+
+
+def _require_sso_user(request: Request) -> str:
+    """Return username from X-Remote-User header, or raise 403."""
+    user = request.headers.get("x-remote-user", "")
+    if not user:
+        raise HTTPException(status_code=403, detail="Forbidden: SSO login required")
+    return user
+
+
+# --- Formgrader reverse proxy routes (must be before app.mount("/live", ...)) ---
+
+
+@app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
+async def formgrader_proxy(request: Request, path: str):
+    """Reverse proxy HTTP requests to formgrader on moriarty."""
+    user = _check_formgrader_access(request)
+    return await _proxy_http(
+        request, MORIARTY_FORMGRADER, f"live/grader/{path}", user,
+        timeout=30.0, service_name="Formgrader",
+    )
+
+
+@app.websocket("/live/grader/{path:path}")
+async def formgrader_ws_proxy(ws: WebSocket, path: str):
+    """Reverse proxy WebSocket connections to formgrader on moriarty."""
+    user = ws.headers.get("x-remote-user", "")
+    if not user or user not in _formgrader_allowed_users():
+        await ws.close(code=4003, reason="Forbidden")
+        return
+    await _proxy_ws(
+        ws, "ws://moriarty.scrtp.warwick.ac.uk:2718", f"live/grader/{path}", user,
+        service_name="formgrader",
+    )
+
+
+# --- Hub reverse proxy routes (under /live/hub for SSO protection) ---
+
+
+@app.get("/live/hub")
+async def hub_redirect():
+    """Redirect /live/hub to /live/hub/ so the {path:path} pattern matches."""
+    return RedirectResponse("/live/hub/")
+
+
+@app.api_route("/live/hub/{path:path}", methods=PROXY_METHODS)
+async def hub_proxy(request: Request, path: str):
+    """Reverse proxy HTTP requests to mograder hub on moriarty."""
+    user = _require_sso_user(request)
+    return await _proxy_http(
+        request, MORIARTY_HUB, path, user,
+        timeout=60.0, service_name="Hub",
+    )
+
+
+@app.websocket("/live/hub/{path:path}")
+async def hub_ws_proxy(ws: WebSocket, path: str):
+    """Reverse proxy WebSocket connections to mograder hub on moriarty."""
+    user = ws.headers.get("x-remote-user", "")
+    if not user:
+        await ws.close(code=4003, reason="Forbidden")
+        return
+    await _proxy_ws(
+        ws, "ws://moriarty.scrtp.warwick.ac.uk:8080", path, user,
+        service_name="hub",
+    )
 
 
 # Mount marimo server at /live (SSO protected path)
