@@ -71,11 +71,19 @@ async def workshop_dashboard(request: Request, workshop: str):
     for exercise_id in all_keys:
         is_released = exercise_id in released
         status = "✅ Released" if is_released else "🔒 Locked"
-        button = "" if is_released else (
-            f'<form method="POST" style="display:inline">'
-            f'<input type="hidden" name="exercise" value="{exercise_id}">'
-            f'<button type="submit">Release</button></form>'
-        )
+        if is_released:
+            button = (
+                f'<form method="POST" style="display:inline">'
+                f'<input type="hidden" name="exercise" value="{exercise_id}">'
+                f'<input type="hidden" name="action" value="revoke">'
+                f'<button type="submit" class="revoke">Revoke</button></form>'
+            )
+        else:
+            button = (
+                f'<form method="POST" style="display:inline">'
+                f'<input type="hidden" name="exercise" value="{exercise_id}">'
+                f'<button type="submit">Release</button></form>'
+            )
         rows += f"<tr><td>{exercise_id}</td><td>{status}</td><td>{button}</td></tr>\n"
 
     return f"""<!DOCTYPE html>
@@ -89,6 +97,8 @@ async def workshop_dashboard(request: Request, workshop: str):
   button {{ background: #5f259f; color: white; border: none; padding: 6px 16px;
            border-radius: 4px; cursor: pointer; }}
   button:hover {{ background: #4a1d7a; }}
+  button.revoke {{ background: #dc3545; }}
+  button.revoke:hover {{ background: #a71d2a; }}
   .info {{ background: #f0f0f0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 0.9em; }}
 </style></head>
 <body>
@@ -123,8 +133,12 @@ async def workshop_release(request: Request, workshop: str):
     if exercise_id not in all_keys:
         raise HTTPException(status_code=400, detail=f"Unknown exercise: {exercise_id}")
 
+    action = form.get("action", "release")
     released = _load_json(keys_file)
-    released[exercise_id] = all_keys[exercise_id]
+    if action == "revoke":
+        released.pop(exercise_id, None)
+    else:
+        released[exercise_id] = all_keys[exercise_id]
     keys_file.parent.mkdir(parents=True, exist_ok=True)
     keys_file.write_text(json.dumps(released, indent=2))
 
