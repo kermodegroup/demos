@@ -20,6 +20,7 @@ MOLAB_PARAMS = "/wasm?include-code=false"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
 MORIARTY_HUB = "http://localhost:18080"  # SSH tunnel to sciml.warwick.cloud (RONIN)
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
+WORKSHOPS_DIR = Path(__file__).parent / "workshops"  # keys.json + keys_all.json per workshop
 
 app = FastAPI()
 
@@ -431,6 +432,10 @@ async def hub_ws_proxy(ws: WebSocket, path: str):
         service_name="hub",
     )
 
+
+# Workshop key release (public keys endpoint + SSO dashboard)
+from workshops import router as workshops_router
+app.include_router(workshops_router)
 
 # Mount marimo server at /live (SSO protected path)
 app.mount("/live", server.build())

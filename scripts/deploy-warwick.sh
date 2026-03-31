@@ -37,6 +37,20 @@ ssh ${REMOTE} 'cd ~/marimo-server && uv sync --extra jax --extra numpyro --extra
 echo -e "\n${YELLOW}Deploying server config...${NC}"
 scp demos.toml ${REMOTE}:~/marimo-server/
 scp server/app.py ${REMOTE}:~/marimo-server/
+[ -f server/workshops.py ] && scp server/workshops.py ${REMOTE}:~/marimo-server/
+
+# Deploy workshop keys (keys_all.json always; keys.json only if not already on server)
+if [ -d "server/workshops" ]; then
+    echo -e "\n${YELLOW}Deploying workshop keys...${NC}"
+    for ws_dir in server/workshops/*/; do
+        [ -d "$ws_dir" ] || continue
+        ws_name=$(basename "$ws_dir")
+        echo "  Workshop: $ws_name"
+        ssh ${REMOTE} "mkdir -p ~/marimo-server/workshops/$ws_name"
+        [ -f "$ws_dir/keys_all.json" ] && scp "$ws_dir/keys_all.json" ${REMOTE}:~/marimo-server/workshops/$ws_name/
+        ssh ${REMOTE} "[ -f ~/marimo-server/workshops/$ws_name/keys.json ] || echo '{}' > ~/marimo-server/workshops/$ws_name/keys.json"
+    done
+fi
 
 # Deploy live notebooks (JAX-dependent) - flatten to just basenames
 echo -e "\n${YELLOW}Deploying live notebooks...${NC}"
