@@ -53,6 +53,28 @@ if [ -n "$LATEST_RUN" ]; then
             echo "  Updated: $ws_name/keys_all.json"
         done
         rm -rf "$KEYS_TMP"
+
+        # Generate dashboard.html for each workshop (with SSO token)
+        echo -e "  ${YELLOW}Generating workshop dashboards...${NC}"
+        uv run python -c "
+import json
+from pathlib import Path
+from mograder.transport.workshop import generate_dashboard_html
+
+for ws_dir in sorted(Path('server/workshops').iterdir()):
+    keys_all_file = ws_dir / 'keys_all.json'
+    if not keys_all_file.exists():
+        continue
+    exercises = list(json.loads(keys_all_file.read_text()).keys())
+    html = generate_dashboard_html(exercises, title=f'Workshop: {ws_dir.name}')
+    # Patch token: replace hash-based extraction with fixed SSO token
+    html = html.replace(
+        \"let TOKEN = location.hash.replace('#token=', '');\",
+        \"let TOKEN = 'sso';\"
+    )
+    (ws_dir / 'dashboard.html').write_text(html)
+    print(f'  Generated: {ws_dir.name}/dashboard.html')
+"
     else
         echo "  Warning: could not download keys artifact (may have expired)"
     fi

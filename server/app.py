@@ -433,9 +433,11 @@ async def hub_ws_proxy(ws: WebSocket, path: str):
     )
 
 
-# Workshop key release (public keys endpoint + SSO dashboard)
-from workshops import router as workshops_router
+# Workshop key release (public keys endpoint + SSO-protected mograder dashboards)
+from workshops import router as workshops_router, create_workshop_mounts
 app.include_router(workshops_router)
+for _ws_name, _ws_app in create_workshop_mounts().items():
+    app.mount(f"/live/workshops/{_ws_name}", _ws_app)
 
 # Mount marimo server at /live (SSO protected path)
 app.mount("/live", server.build())

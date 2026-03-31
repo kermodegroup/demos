@@ -1,6 +1,6 @@
 {
-  "Q1: f_X": "hetsys",
-  "Q2: conditional_pdf": "hetsys",
-  "Q3: conditional plot": "hetsys",
-  "Q4: marginal plot": "hetsys"
+  "Q1": "hetsys",
+  "Q2": "hetsys",
+  "Q3": "hetsys",
+  "Q4": "hetsys"
 }

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop: L00b</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgdmlld0JveD0iMCAwIDI1NiAyNTYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8c3R5bGU+CiAgICAgIC5saW5lIHsKICAgICAgICBzdHJva2U6ICMwQUFENjk7CiAgICAgICAgc3Ryb2tlLXdpZHRoOiAxMDsKICAgICAgICBzdHJva2UtbGluZWNhcDogcm91bmQ7CiAgICAgICAgc3Ryb2tlLWxpbmVqb2luOiByb3VuZDsKICAgICAgICBmaWxsOiBub25lOwogICAgICB9CiAgICAgIC5ncmlkIHsKICAgICAgICBzdHJva2U6ICMwQUFENjk7CiAgICAgICAgc3Ryb2tlLXdpZHRoOiA2OwogICAgICAgIHN0cm9rZS1saW5lY2FwOiByb3VuZDsKICAgICAgICBvcGFjaXR5OiAwLjU7CiAgICAgIH0KICAgICAgLnRleHQgewogICAgICAgIGZvbnQtZmFtaWx5OiAtYXBwbGUtc3lzdGVtLCBCbGlua01hY1N5c3RlbUZvbnQsICJTZWdvZSBVSSIsIFJvYm90bywgc2Fucy1zZXJpZjsKICAgICAgICBmb250LXNpemU6IDM2cHg7CiAgICAgICAgZmlsbDogIzFmMjkzNzsKICAgICAgfQogICAgPC9zdHlsZT4KICA8L2RlZnM+CgogIDwhLS0gUm91bmRlZCBzcXVhcmUgLS0+CiAgPHJlY3QgeD0iMjgiIHk9IjI4IiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgcng9IjM2IiBjbGFzcz0ibGluZSI+PC9yZWN0PgoKICA8IS0tIEdyaWQgKDN4MykgLS0+CiAgPCEtLSBWZXJ0aWNhbCBsaW5lcyAtLT4KICA8bGluZSB4MT0iOTYiIHkxPSI2NCIgeDI9Ijk2IiB5Mj0iMTkyIiBjbGFzcz0iZ3JpZCI+PC9saW5lPgogIDxsaW5lIHgxPSIxNjAiIHkxPSI2NCIgeDI9IjE2MCIgeTI9IjE5MiIgY2xhc3M9ImdyaWQiPjwvbGluZT4KCiAgPCEtLSBIb3Jpem9udGFsIGxpbmVzIC0tPgogIDxsaW5lIHgxPSI2NCIgeTE9Ijk2IiB4Mj0iMTkyIiB5Mj0iOTYiIGNsYXNzPSJncmlkIj48L2xpbmU+CiAgPGxpbmUgeDE9IjY0IiB5MT0iMTYwIiB4Mj0iMTkyIiB5Mj0iMTYwIiBjbGFzcz0iZ3JpZCI+PC9saW5lPgoKICA8IS0tIENoZWNrbWFyayAodG9wLXJpZ2h0IGNlbGwpIC0tPgogIDxwYXRoIGQ9Ik0xNTAgODAgTDE3MCAxMDAgTDIwMCA2MCIgY2xhc3M9ImxpbmUiPjwvcGF0aD4KPC9zdmc+">
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { text-align: left; padding: 0.5rem 1rem; border-bottom: 1px solid #ddd; }
+  .btn { padding: 0.4rem 1rem; margin: 0.2rem; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f5f5f5; }
+  .btn:hover { background: #e0e0e0; }
+  .btn-release { background: #d4edda; border-color: #28a745; }
+  .btn-lock { background: #f8d7da; border-color: #dc3545; }
+  #status { margin: 1rem 0; padding: 0.5rem; border-radius: 4px; }
+  .ok { background: #d4edda; }
+  .err { background: #f8d7da; }
+</style>
+</head>
+<body>
+<h1>Workshop: L00b</h1>
+<div id="status"></div>
+<div style="margin-bottom:1rem">
+  <button class="btn btn-release" onclick="releaseAll(true)">Release All</button>
+  <button class="btn btn-lock" onclick="releaseAll(false)">Lock All</button>
+</div>
+<table>
+  <thead><tr><th>Exercise</th><th>Released</th></tr></thead>
+  <tbody id="exercises"></tbody>
+</table>
+<script>
+const EXERCISES = ["Q1", "Q2", "Q3", "Q4"];
+let TOKEN = 'sso';
+
+function api(path, opts) {
+  const sep = path.includes('?') ? '&' : '?';
+  return fetch(path + sep + 'token=' + TOKEN, opts);
+}
+
+function render(state) {
+  const tbody = document.getElementById('exercises');
+  tbody.innerHTML = '';
+  state.exercises.forEach(function(ex) {
+    const tr = document.createElement('tr');
+    const tdName = document.createElement('td');
+    tdName.textContent = ex;
+    const tdCheck = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!state.released[ex];
+    cb.onchange = function() { toggleRelease(ex, cb.checked); };
+    tdCheck.appendChild(cb);
+    tr.appendChild(tdName);
+    tr.appendChild(tdCheck);
+    tbody.appendChild(tr);
+  });
+}
+
+function refresh() {
+  api('/workshop/exercises')
+    .then(function(r) { return r.json(); })
+    .then(render)
+    .catch(function(e) { showStatus('Error: ' + e, 'err'); });
+}
+
+function toggleRelease(exercise, released) {
+  api('/workshop/release', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({exercise: exercise, released: released})
+  }).then(function(r) { return r.json(); }).then(render);
+}
+
+function releaseAll(released) {
+  api('/workshop/release-all', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({released: released})
+  }).then(function(r) { return r.json(); }).then(render);
+}
+
+function showStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+if (!TOKEN) {
+  showStatus('No token found. Open this page with #token=<secret>', 'err');
+} else {
+  refresh();
+  setInterval(refresh, 3000);
+}
+</script>
+</body>
+</html>

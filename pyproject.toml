@@ -44,6 +44,7 @@ server = [
     "httpx",
     "websockets",
     "python-multipart",
+    "mograder",
 ]
 dev = [
     "uv",

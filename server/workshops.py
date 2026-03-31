@@ -1,145 +1,78 @@
-"""Workshop key release endpoints for mograder encrypted notebooks.
+"""Workshop key release for mograder encrypted WASM notebooks.
 
-Students fetch keys.json from GitHub Pages WASM notebooks (CORS required).
-Instructor releases keys via SSO-protected dashboard at /live/workshops/{name}/dashboard.
+Reuses mograder's built-in Starlette dashboard (toggle checkboxes,
+release-all, auto-refresh) rather than maintaining a separate UI.
+
+Public endpoint:
+    GET /workshops/{name}/keys.json  — released keys (CORS, no auth)
+
+SSO-protected dashboard (mounted under /live/):
+    GET /live/workshops/{name}/dashboard.html  — instructor dashboard
+    + JSON API endpoints for release/revoke
 
 Setup:
-  1. Run `mograder workshop export` in CI → produces keys_all.json
-  2. Copy keys_all.json to server/workshops/{name}/keys_all.json
-  3. keys.json is created automatically (starts empty, grows as you release)
-
-Usage:
-  from workshops import router as workshops_router
-  app.include_router(workshops_router)
+    1. Place keys_all.json + dashboard.html in server/workshops/{name}/
+    2. deploy-warwick.sh patches dashboard.html to use SSO token
+    3. Starlette apps are auto-discovered and mounted
 """
 
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter
+from starlette.responses import Response
 
 WORKSHOPS_DIR = Path(__file__).parent / "workshops"
+SSO_TOKEN = "sso"  # dummy token; real auth is via Apache SSO on /live/
 
 router = APIRouter()
 
 
-def _load_json(path: Path) -> dict:
-    if path.exists():
-        return json.loads(path.read_text())
-    return {}
-
-
-# --- Public endpoint (CORS for GitHub Pages) ---
+# --- Public keys endpoint (CORS for GitHub Pages WASM notebooks) ---
 
 
 @router.get("/workshops/{workshop}/keys.json")
 async def workshop_keys(workshop: str):
     """Serve released keys. Called by WASM notebooks on GitHub Pages."""
-    keys = _load_json(WORKSHOPS_DIR / workshop / "keys.json")
+    keys_file = WORKSHOPS_DIR / workshop / "keys.json"
+    data = keys_file.read_text() if keys_file.exists() else "{}"
     return Response(
-        content=json.dumps(keys),
+        content=data,
         media_type="application/json",
         headers={"Access-Control-Allow-Origin": "*"},
     )
 
 
-# --- Instructor dashboard (SSO via /live mount) ---
+# --- Starlette app factory for mograder dashboards ---
 
 
-@router.get("/live/workshops/{workshop}/dashboard", response_class=HTMLResponse)
-async def workshop_dashboard(request: Request, workshop: str):
-    """Dashboard to release solutions one at a time."""
-    user = request.headers.get("x-remote-user", "")
-    if not user:
-        raise HTTPException(status_code=403, detail="SSO login required")
+def create_workshop_mounts():
+    """Create mograder Starlette sub-apps for each workshop directory.
 
-    keys_all_file = WORKSHOPS_DIR / workshop / "keys_all.json"
-    keys_file = WORKSHOPS_DIR / workshop / "keys.json"
+    Returns dict of {name: starlette_app} to be mounted under
+    /live/workshops/{name}/ in the main FastAPI app.
+    """
+    from mograder.transport.workshop_server import create_workshop_starlette_routes
 
-    if not keys_all_file.exists():
-        return HTMLResponse(
-            f"<h1>Workshop '{workshop}' not configured</h1>"
-            f"<p>Place keys_all.json in workshops/{workshop}/</p>",
-            status_code=404,
+    apps = {}
+    for ws_dir in sorted(WORKSHOPS_DIR.iterdir()):
+        if not ws_dir.is_dir():
+            continue
+        keys_all_file = ws_dir / "keys_all.json"
+        dashboard_file = ws_dir / "dashboard.html"
+        if not keys_all_file.exists():
+            continue
+        if not dashboard_file.exists():
+            continue
+
+        keys_all = json.loads(keys_all_file.read_text())
+        keys_path = ws_dir / "keys.json"
+
+        ws_app = create_workshop_starlette_routes(
+            export_dir=ws_dir,
+            keys_path=keys_path,
+            keys_all=keys_all,
+            secret=SSO_TOKEN,
         )
-
-    all_keys = _load_json(keys_all_file)
-    released = _load_json(keys_file)
-
-    rows = ""
-    for exercise_id in all_keys:
-        is_released = exercise_id in released
-        status = "✅ Released" if is_released else "🔒 Locked"
-        if is_released:
-            button = (
-                f'<form method="POST" style="display:inline">'
-                f'<input type="hidden" name="exercise" value="{exercise_id}">'
-                f'<input type="hidden" name="action" value="revoke">'
-                f'<button type="submit" class="revoke">Revoke</button></form>'
-            )
-        else:
-            button = (
-                f'<form method="POST" style="display:inline">'
-                f'<input type="hidden" name="exercise" value="{exercise_id}">'
-                f'<button type="submit">Release</button></form>'
-            )
-        rows += f"<tr><td>{exercise_id}</td><td>{status}</td><td>{button}</td></tr>\n"
-
-    return f"""<!DOCTYPE html>
-<html><head><title>Workshop: {workshop}</title>
-<style>
-  body {{ font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }}
-  h1 {{ color: #5f259f; }}
-  table {{ border-collapse: collapse; width: 100%; }}
-  th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-  th {{ background: #f5f5f5; }}
-  button {{ background: #5f259f; color: white; border: none; padding: 6px 16px;
-           border-radius: 4px; cursor: pointer; }}
-  button:hover {{ background: #4a1d7a; }}
-  button.revoke {{ background: #dc3545; }}
-  button.revoke:hover {{ background: #a71d2a; }}
-  .info {{ background: #f0f0f0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 0.9em; }}
-</style></head>
-<body>
-  <h1>Workshop: {workshop}</h1>
-  <p>Logged in as: <strong>{user}</strong></p>
-  <div class="info">Release solutions one at a time during the support session.
-  Students' WASM notebooks fetch updated keys on next page load.</div>
-  <table>
-    <tr><th>Exercise</th><th>Status</th><th>Action</th></tr>
-    {rows}
-  </table>
-</body></html>"""
-
-
-@router.post("/live/workshops/{workshop}/dashboard")
-async def workshop_release(request: Request, workshop: str):
-    """Release a single exercise solution."""
-    user = request.headers.get("x-remote-user", "")
-    if not user:
-        raise HTTPException(status_code=403, detail="SSO login required")
-
-    form = await request.form()
-    exercise_id = form.get("exercise", "")
-
-    keys_all_file = WORKSHOPS_DIR / workshop / "keys_all.json"
-    keys_file = WORKSHOPS_DIR / workshop / "keys.json"
-
-    if not keys_all_file.exists():
-        raise HTTPException(status_code=404, detail="Workshop not configured")
-
-    all_keys = _load_json(keys_all_file)
-    if exercise_id not in all_keys:
-        raise HTTPException(status_code=400, detail=f"Unknown exercise: {exercise_id}")
-
-    action = form.get("action", "release")
-    released = _load_json(keys_file)
-    if action == "revoke":
-        released.pop(exercise_id, None)
-    else:
-        released[exercise_id] = all_keys[exercise_id]
-    keys_file.parent.mkdir(parents=True, exist_ok=True)
-    keys_file.write_text(json.dumps(released, indent=2))
-
-    return RedirectResponse(f"/live/workshops/{workshop}/dashboard", status_code=303)
+        apps[ws_dir.name] = ws_app
+    return apps

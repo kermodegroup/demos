@@ -1,5 +1,5 @@
 {
-  "Q1: samplemean": "hetsys",
-  "Q2: variance plot": "hetsys",
-  "Q3: CLT demonstration": "hetsys"
+  "Q1": "hetsys",
+  "Q2": "hetsys",
+  "Q3": "hetsys"
 }
