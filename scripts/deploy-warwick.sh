@@ -67,10 +67,15 @@ for ws_dir in sorted(Path('server/workshops').iterdir()):
         continue
     exercises = list(json.loads(keys_all_file.read_text()).keys())
     html = generate_dashboard_html(exercises, title=f'Workshop: {ws_dir.name}')
-    # Patch token: replace hash-based extraction with fixed SSO token
+    # Patch for SSO: fixed token + relative API paths
     html = html.replace(
         \"let TOKEN = location.hash.replace('#token=', '');\",
         \"let TOKEN = 'sso';\"
+    )
+    # Make API paths relative to mount point (dashboard is at /live/workshops/X/dashboard.html)
+    html = html.replace(
+        \"function api(path, opts) {\",
+        \"function api(path, opts) { path = '.' + path;\"
     )
     (ws_dir / 'dashboard.html').write_text(html)
     print(f'  Generated: {ws_dir.name}/dashboard.html')
