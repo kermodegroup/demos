@@ -91,6 +91,7 @@ if [ -d "server/workshops" ]; then
         echo "  Workshop: $ws_name"
         ssh ${REMOTE} "mkdir -p ~/marimo-server/workshops/$ws_name"
         [ -f "$ws_dir/keys_all.json" ] && scp "$ws_dir/keys_all.json" ${REMOTE}:~/marimo-server/workshops/$ws_name/
+        [ -f "$ws_dir/dashboard.html" ] && scp "$ws_dir/dashboard.html" ${REMOTE}:~/marimo-server/workshops/$ws_name/
         ssh ${REMOTE} "[ -f ~/marimo-server/workshops/$ws_name/keys.json ] || echo '{}' > ~/marimo-server/workshops/$ws_name/keys.json"
     done
 fi
