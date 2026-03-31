@@ -39,6 +39,27 @@ scp demos.toml ${REMOTE}:~/marimo-server/
 scp server/app.py ${REMOTE}:~/marimo-server/
 [ -f server/workshops.py ] && scp server/workshops.py ${REMOTE}:~/marimo-server/
 
+# Fetch latest workshop keys from PX914 CI
+echo -e "\n${YELLOW}Fetching workshop keys from PX914 CI...${NC}"
+PX914_REPO="HetSys/PX914"
+LATEST_RUN=$(gh run list --repo "$PX914_REPO" --workflow "deploy-wasm.yml" --status success --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+if [ -n "$LATEST_RUN" ]; then
+    KEYS_TMP=$(mktemp -d)
+    if gh run download "$LATEST_RUN" --repo "$PX914_REPO" --name workshop-keys --dir "$KEYS_TMP" 2>/dev/null; then
+        for keys_file in "$KEYS_TMP"/*/keys_all.json; do
+            ws_name=$(basename "$(dirname "$keys_file")" | sed 's/-.*//') # L00a-ProbabilityFoundations -> L00a
+            mkdir -p "server/workshops/$ws_name"
+            cp "$keys_file" "server/workshops/$ws_name/keys_all.json"
+            echo "  Updated: $ws_name/keys_all.json"
+        done
+        rm -rf "$KEYS_TMP"
+    else
+        echo "  Warning: could not download keys artifact (may have expired)"
+    fi
+else
+    echo "  Warning: no successful PX914 CI run found"
+fi
+
 # Deploy workshop keys (keys_all.json always; keys.json only if not already on server)
 if [ -d "server/workshops" ]; then
     echo -e "\n${YELLOW}Deploying workshop keys...${NC}"
