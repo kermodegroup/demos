@@ -445,6 +445,13 @@ for _ws_name, _ws_app in create_workshop_mounts().items():
 # Content is deployed by the wiki repo's scripts/deploy-wiki.sh.
 WIKI_DIR = Path(__file__).parent / "wiki-site"
 if WIKI_DIR.exists():
+    # Redirect the bare mount path to the trailing-slash form; without this the
+    # StaticFiles mount (which only matches /live/wiki/...) is shadowed by the
+    # /live catch-all below and 404s. Mirrors hub_redirect above.
+    @app.get("/live/wiki")
+    def wiki_redirect():
+        return RedirectResponse("/live/wiki/")
+
     app.mount("/live/wiki", StaticFiles(directory=str(WIKI_DIR), html=True), name="wiki")
 
 # Mount marimo server at /live (SSO protected path)
