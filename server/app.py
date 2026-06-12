@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import httpx
 import logging
 import websockets
@@ -438,6 +439,13 @@ from workshops import router as workshops_router, create_workshop_mounts
 app.include_router(workshops_router)
 for _ws_name, _ws_app in create_workshop_mounts().items():
     app.mount(f"/live/workshops/{_ws_name}", _ws_app)
+
+# Mount the group wiki (MkDocs static build) at /live/wiki (SSO protected via /live).
+# Must be registered before the /live catch-all mount below so it isn't shadowed.
+# Content is deployed by the wiki repo's scripts/deploy-wiki.sh.
+WIKI_DIR = Path(__file__).parent / "wiki-site"
+if WIKI_DIR.exists():
+    app.mount("/live/wiki", StaticFiles(directory=str(WIKI_DIR), html=True), name="wiki")
 
 # Mount marimo server at /live (SSO protected path)
 app.mount("/live", server.build())
