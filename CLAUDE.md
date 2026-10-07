@@ -130,7 +130,7 @@ The deploy script:
 </Location>
 ```
 
-`set` also overwrites any `X-Remote-User` a client sends, so without this line users could impersonate others. The header stopped arriving when `shib.conf` was replaced on 28 Sep 2026 (the file belongs to the shibboleth 3.6.0 package, so apparently a package update; it took effect at the 5 Oct reboot), and every `/live/hub` request then failed with `{"detail":"Forbidden: SSO login required"}`. Check with `/live/debug-headers` after any IT change or package update.
+`set` also overwrites any `X-Remote-User` a client sends, so without this line users could impersonate others. The header stopped arriving when `shib.conf` was replaced on 28 Sep 2026 (the file belongs to the shibboleth 3.6.0 package, so apparently a package update; it took effect at the 5 Oct reboot), and every `/live/hub` request then failed with `{"detail":"Forbidden: SSO login required"}`. Check with `/live/debug-headers` after any IT change or package update. While the line is missing, the systemd drop-in `~/.config/systemd/user/marimo.service.d/sso-header.conf` sets `TRUST_SSO_HEADER=0`, so `app.py` discards any client-sent `X-Remote-User` (debug-headers then reports it under `x-remote-user-discarded`). Once that shows your username coming from Apache, delete the drop-in, `systemctl --user daemon-reload && systemctl --user restart marimo`.
 
 **Server routes:**
 - `/` - Index page listing all notebooks with WASM/LIVE/DEMO badges

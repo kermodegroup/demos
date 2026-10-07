@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import httpx
 import logging
+import os
 import websockets
 NOTEBOOKS_DIR = Path(__file__).parent / "notebooks"
 PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
@@ -24,6 +25,35 @@ FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 WORKSHOPS_DIR = Path(__file__).parent / "workshops"  # keys.json + keys_all.json per workshop
 
 app = FastAPI()
+
+
+class DropUntrustedRemoteUser:
+    """Strip X-Remote-User from incoming requests unless Apache is known to set it.
+
+    Users are identified only by the X-Remote-User header, which Apache must set
+    from the Shibboleth session (`RequestHeader set X-Remote-User ...` in
+    <Location /live>). If Apache does not set it, any value that arrives was sent
+    by the client, and trusting it would let one user impersonate another (e.g.
+    an instructor). Set TRUST_SSO_HEADER=0 in the service environment while the
+    Apache line is missing; the raw value stays visible at /live/debug-headers.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            kept = [(k, v) for k, v in scope["headers"] if k != b"x-remote-user"]
+            if len(kept) != len(scope["headers"]):
+                dropped = dict(scope["headers"]).get(b"x-remote-user", b"")
+                scope = {**scope, "headers": kept,
+                         "untrusted_remote_user": dropped.decode("latin-1")}
+        await self.app(scope, receive, send)
+
+
+TRUST_SSO_HEADER = os.environ.get("TRUST_SSO_HEADER", "1") != "0"
+if not TRUST_SSO_HEADER:
+    app.add_middleware(DropUntrustedRemoteUser)
 
 # Add CORS middleware
 app.add_middleware(
@@ -222,6 +252,10 @@ def debug_headers(request: Request):
     return {
         "headers": dict(request.headers),
         "x-remote-user": request.headers.get("x-remote-user", "(not set)"),
+        "trust_sso_header": TRUST_SSO_HEADER,
+        # value received but discarded while TRUST_SSO_HEADER=0 (once Apache sets
+        # the header again this shows your own username)
+        "x-remote-user-discarded": request.scope.get("untrusted_remote_user", "(none)"),
     }
 
 
