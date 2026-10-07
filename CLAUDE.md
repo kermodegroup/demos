@@ -13,16 +13,26 @@ This repository contains interactive research demonstrations built with [marimo]
 ```
 demos/
 ├── apps/                    # WASM-compatible notebooks (static HTML export)
-│   └── lib/                 # Shared library modules
+│   ├── lib/                 # Shared library modules
+│   └── _mnist_data.py       # Inline MNIST data for WASM compatibility
 ├── notebooks/               # Live server notebooks (require native deps)
+├── presentations/           # Public demo presentations (no auth)
+│   └── uq-kinetics/         # UQ reaction kinetics presentation
 ├── scripts/
 │   ├── build.py             # WASM HTML export script
 │   ├── categorize_notebooks.py  # WASM vs live detection
 │   ├── generate_index.py    # GitHub Pages index generator
+│   ├── generate_mnist_data.py   # MNIST data generator for PCA demo
 │   ├── deploy.sh            # Server-side deployment (systemd + nginx)
 │   └── deploy-warwick.sh    # Local deployment script (live notebooks only)
 ├── server/
-│   └── app.py               # FastAPI server for live notebooks
+│   ├── app.py               # FastAPI server for live notebooks
+│   ├── notebooks/           # Symlink/copy of notebooks/ for server
+│   ├── presentations/       # Public presentations served at /demos
+│   └── student/             # Student dashboard WASM app
+├── demos.toml               # Demo ordering and display config
+├── grader.toml              # Formgrader access config
+├── pyproject.toml            # Project dependencies (uv managed)
 └── .github/workflows/
     └── pages.yml            # GitHub Actions for WASM deployment
 ```
@@ -41,9 +51,13 @@ Notebooks are automatically categorized and deployed to different hosts:
 
 2. **Live (sciml.warwick.ac.uk)** - Notebooks in `notebooks/` with native dependencies
    - Deployed manually via `deploy-warwick.sh`
-   - Each notebook runs as a separate marimo process
+   - Served via FastAPI (`server/app.py`) using `marimo.create_asgi_app()`
    - Proxied through nginx with WebSocket support
    - Protected by University of Warwick SSO
+
+3. **Presentations (sciml.warwick.ac.uk/demos)** - Public demo presentations
+   - Served from `presentations/` directory, no auth required
+   - Mounted at `/demos` path in FastAPI server
 
 ### WASM Incompatible Packages
 
@@ -95,13 +109,41 @@ The deploy script:
 ├── app.py           # FastAPI entry point
 ├── deploy.sh        # Server-side deployment script
 ├── notebooks/       # Live notebook .py files
+├── presentations/   # Public demo presentations
+├── student/         # Student dashboard WASM app
 └── .venv/           # Python environment with marimo + deps
 ```
 
 **Services:**
-- nginx: SSL termination, SSO auth, reverse proxy
-- systemd: marimo server process
+- Apache httpd + Shibboleth (`mod_shib`): SSL termination, SSO auth, reverse proxy to the app on `localhost:2718`. The host is green-walrus (`ssh sciml` = `svc_user` via green-walrus); `/etc/httpd` is managed by IT (no sudo for us).
+- systemd (user units of `svc_user`): `marimo.service` (the FastAPI app), `mograder-tunnel.service` (SSH tunnel `localhost:18080` → RONIN hub `sciml.warwick.cloud:8080`)
 - Let's Encrypt: SSL certificates
+
+**SSO user header (required):** `app.py` identifies users only by the `X-Remote-User` request header, which Apache must set from the Shibboleth session inside `<Location /live>` in `/etc/httpd/conf.d/shib.conf`:
+
+```apache
+<Location /live>
+  AuthType shibboleth
+  ShibRequestSetting requireSession 1
+  require shib-session
+  RequestHeader set X-Remote-User "expr=%{REMOTE_USER}"
+</Location>
+```
+
+`set` also overwrites any `X-Remote-User` a client sends, so without this line users could impersonate others. The header stopped arriving when `shib.conf` was replaced on 28 Sep 2026 (the file belongs to the shibboleth 3.6.0 package, so apparently a package update; it took effect at the 5 Oct reboot), and every `/live/hub` request then failed with `{"detail":"Forbidden: SSO login required"}`. Check with `/live/debug-headers` after any IT change or package update.
+
+**Server routes:**
+- `/` - Index page listing all notebooks with WASM/LIVE/DEMO badges
+- `/live/{name}/` - Live notebooks (SSO protected)
+- `/wasm/{name}/` - Redirects to GitHub Pages WASM exports
+- `/demos/{name}/` - Public presentations
+- `/live/student/` - Student dashboard with assignment API proxy
+- `/live/grader/` - Formgrader reverse proxy to moriarty (staff only)
+
+**Formgrader integration:**
+- Reverse proxies HTTP and WebSocket to `moriarty.scrtp.warwick.ac.uk:2718`
+- Access controlled via `formgrader_users.txt` on server
+- Student API proxy allows any SSO user to access assignments
 
 ## GitHub Pages Configuration
 
@@ -131,3 +173,21 @@ Shared code for regression demos:
 | `optimization.py` | GP hyperparameter optimization |
 
 **Sync workflow:** When modifying lib/, run `--check-sync` to verify inline copies in notebooks match.
+
+## Demo Configuration (`demos.toml`)
+
+Controls display order and titles on the index page. Each entry has:
+- `name` - matches the notebook filename (without `.py`)
+- `title` - display title on the index page
+- `type` - optional, e.g. `"demo"` for presentations
+- `hidden` - optional, hides from index if `true`
+
+Notebooks not in `demos.toml` still work but appear after configured ones.
+
+## Dependencies
+
+Managed with `uv` via `pyproject.toml`. Optional dependency groups:
+- **jax**: JAX, tinygp, equinox, optax, optimistix (for GP and neural ODE demos)
+- **numpyro**: NumPyro, arviz, diffrax (for BNN and probabilistic demos)
+- **server**: FastAPI, uvicorn, httpx, websockets (for live server)
+- **dev**: uv
