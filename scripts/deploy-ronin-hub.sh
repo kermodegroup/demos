@@ -65,8 +65,8 @@ jobs = 16
 transport = "moodle"
 
 [moodle]
-url = "https://moodle-staging.warwick.ac.uk"
-course_id = 65017
+url = "https://moodle.warwick.ac.uk"
+course_id = 76471
 EOF
 fi
 MOODLE
