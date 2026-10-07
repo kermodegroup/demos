@@ -468,11 +468,36 @@ async def hub_ws_proxy(ws: WebSocket, path: str):
     )
 
 
-# Workshop key release (public keys endpoint + SSO-protected mograder dashboards)
+class InstructorOnly:
+    """ASGI wrapper: only users in formgrader_users.txt (by SSO header) get through.
+
+    The workshop dashboards authenticate with a fixed token, so without this any
+    Warwick SSO user could release or revoke workshop solution keys.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            user = dict(scope["headers"]).get(b"x-remote-user", b"").decode("latin-1")
+            if not user or user not in _formgrader_allowed_users():
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 4003})
+                    return
+                await send({"type": "http.response.start", "status": 403,
+                            "headers": [(b"content-type", b"text/plain")]})
+                await send({"type": "http.response.body",
+                            "body": b"Forbidden: instructor access required"})
+                return
+        await self.app(scope, receive, send)
+
+
+# Workshop key release (public keys endpoint + instructor-only mograder dashboards)
 from workshops import router as workshops_router, create_workshop_mounts
 app.include_router(workshops_router)
 for _ws_name, _ws_app in create_workshop_mounts().items():
-    app.mount(f"/live/workshops/{_ws_name}", _ws_app)
+    app.mount(f"/live/workshops/{_ws_name}", InstructorOnly(_ws_app))
 
 # Mount the group wiki (MkDocs static build) at /live/wiki (SSO protected via /live).
 # Must be registered before the /live catch-all mount below so it isn't shadowed.
