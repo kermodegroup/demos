@@ -308,14 +308,17 @@ async def _proxy_http(
     body = await request.body()
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        # a down upstream should fail fast: cap the connect phase, whatever
+        # the read timeout (a dropped connection times out, not refuses)
+        client_timeout = httpx.Timeout(timeout, connect=min(timeout, 5.0))
+        async with httpx.AsyncClient(timeout=client_timeout) as client:
             resp = await client.request(
                 method=request.method,
                 url=target_url,
                 headers=headers,
                 content=body,
             )
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.ConnectTimeout):
         if error_html:
             return HTMLResponse(content=error_html, status_code=502)
         raise HTTPException(
@@ -400,6 +403,30 @@ def _require_sso_user(request: Request) -> str:
 # --- Formgrader reverse proxy routes (must be before app.mount("/live", ...)) ---
 
 
+_FORMGRADER_DOWN_HTML = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Formgrader Offline</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 80px auto; padding: 20px; text-align: center; }
+        h1 { color: #5f259f; }
+        .message { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 1.5em; margin: 2em 0; }
+        code { background: #f4f4f4; padding: 0 4px; }
+        .retry a { background: #5f259f; color: white; padding: 10px 24px; border-radius: 6px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <h1>Formgrader Offline</h1>
+    <div class="message">
+        <p>The formgrader on moriarty is <strong>not running</strong>
+        (nothing answers on <code>moriarty.scrtp.warwick.ac.uk:2718</code>).</p>
+        <p>Start it on moriarty, then try again.</p>
+    </div>
+    <p class="retry"><a href="/live/grader/">Retry</a></p>
+</body>
+</html>"""
+
+
 @app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
 async def formgrader_proxy(request: Request, path: str):
     """Reverse proxy HTTP requests to formgrader on moriarty."""
@@ -407,6 +434,7 @@ async def formgrader_proxy(request: Request, path: str):
     return await _proxy_http(
         request, MORIARTY_FORMGRADER, f"live/grader/{path}", user,
         timeout=30.0, service_name="Formgrader",
+        error_html=_FORMGRADER_DOWN_HTML,
     )
 
 
