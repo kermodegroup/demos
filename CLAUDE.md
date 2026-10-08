@@ -134,6 +134,8 @@ The deploy script:
 
 **Workshop dashboards:** `/live/workshops/{name}/` (dashboard and release/revoke API) is wrapped in `InstructorOnly` in `app.py`: only users listed in `formgrader_users.txt` get through (the dashboards' own token is a fixed `"sso"`). The public `/workshops/{name}/keys.json` is unaffected.
 
+**Formgrader (`/live/grader`):** since 8 Oct 2026 on its own RONIN instance, `sciml-grader.warwick.cloud` (was moriarty, which green-walrus can no longer reach on port 2718). User service `mograder-grader-tunnel` on sciml forwards `localhost:12718` → grader `localhost:2718`; `app.py` `FORMGRADER = "http://localhost:12718"`. Only users in `formgrader_users.txt` get through: that file is the only gate, since the formgrader treats tunnelled (localhost) requests as the instructor.
+
 **Hub allowlist:** while `~/marimo-server/hub_users.txt` exists, `/live/hub` (HTTP and WebSocket) admits only the usernames listed in it; everyone else gets 403 "The hub is not open yet". Read on each request, no restart needed. In place since 8 Oct 2026 (only `u1470235`) for testing; **delete it before the module opens** (or add GTAs to it).
 
 **Server routes:**

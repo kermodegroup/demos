@@ -19,7 +19,7 @@ if not CONFIG_FILE.exists():
 GITHUB_PAGES_BASE = "https://kermodegroup.github.io/demos"
 MOLAB_BASE = "https://molab.marimo.io/github/kermodegroup/demos/blob/main"
 MOLAB_PARAMS = "/wasm?include-code=false"
-MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
+FORMGRADER = "http://localhost:12718"  # SSH tunnel to sciml-grader.warwick.cloud (RONIN)
 MORIARTY_HUB = "http://localhost:18080"  # SSH tunnel to sciml.warwick.cloud (RONIN)
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
 # Optional hub allowlist: while this file exists, /live/hub admits only the
@@ -418,9 +418,10 @@ _FORMGRADER_DOWN_HTML = """<!DOCTYPE html>
 <body>
     <h1>Formgrader Offline</h1>
     <div class="message">
-        <p>The formgrader on moriarty is <strong>not running</strong>
-        (nothing answers on <code>moriarty.scrtp.warwick.ac.uk:2718</code>).</p>
-        <p>Start it on moriarty, then try again.</p>
+        <p>The formgrader is <strong>not reachable</strong>: the grader instance
+        (<code>sciml-grader.warwick.cloud</code>) may be stopped, or the
+        <code>mograder-grader-tunnel</code> service on sciml is down.</p>
+        <p>Start the grader in RONIN, then try again.</p>
     </div>
     <p class="retry"><a href="/live/grader/">Retry</a></p>
 </body>
@@ -429,10 +430,10 @@ _FORMGRADER_DOWN_HTML = """<!DOCTYPE html>
 
 @app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
 async def formgrader_proxy(request: Request, path: str):
-    """Reverse proxy HTTP requests to formgrader on moriarty."""
+    """Reverse proxy HTTP requests to the formgrader on RONIN (via the tunnel)."""
     user = _check_formgrader_access(request)
     return await _proxy_http(
-        request, MORIARTY_FORMGRADER, f"live/grader/{path}", user,
+        request, FORMGRADER, f"live/grader/{path}", user,
         timeout=30.0, service_name="Formgrader",
         error_html=_FORMGRADER_DOWN_HTML,
     )
@@ -440,13 +441,13 @@ async def formgrader_proxy(request: Request, path: str):
 
 @app.websocket("/live/grader/{path:path}")
 async def formgrader_ws_proxy(ws: WebSocket, path: str):
-    """Reverse proxy WebSocket connections to formgrader on moriarty."""
+    """Reverse proxy WebSocket connections to the formgrader on RONIN."""
     user = ws.headers.get("x-remote-user", "")
     if not user or user not in _formgrader_allowed_users():
         await ws.close(code=4003, reason="Forbidden")
         return
     await _proxy_ws(
-        ws, "ws://moriarty.scrtp.warwick.ac.uk:2718", f"live/grader/{path}", user,
+        ws, FORMGRADER.replace("http", "ws", 1), f"live/grader/{path}", user,
         service_name="formgrader",
     )
 
