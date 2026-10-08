@@ -134,6 +134,8 @@ The deploy script:
 
 **Workshop dashboards:** `/live/workshops/{name}/` (dashboard and release/revoke API) is wrapped in `InstructorOnly` in `app.py`: only users listed in `formgrader_users.txt` get through (the dashboards' own token is a fixed `"sso"`). The public `/workshops/{name}/keys.json` is unaffected.
 
+**Hub allowlist:** while `~/marimo-server/hub_users.txt` exists, `/live/hub` (HTTP and WebSocket) admits only the usernames listed in it; everyone else gets 403 "The hub is not open yet". Read on each request, no restart needed. In place since 8 Oct 2026 (only `u1470235`) for testing; **delete it before the module opens** (or add GTAs to it).
+
 **Server routes:**
 - `/` - Index page listing all notebooks with WASM/LIVE/DEMO badges
 - `/live/{name}/` - Live notebooks (SSO protected)

@@ -22,6 +22,10 @@ MOLAB_PARAMS = "/wasm?include-code=false"
 MORIARTY_FORMGRADER = "http://moriarty.scrtp.warwick.ac.uk:2718"
 MORIARTY_HUB = "http://localhost:18080"  # SSH tunnel to sciml.warwick.cloud (RONIN)
 FORMGRADER_USERS_FILE = Path(__file__).parent / "formgrader_users.txt"
+# Optional hub allowlist: while this file exists, /live/hub admits only the
+# users listed in it (e.g. during testing, before the module opens); delete it
+# to open the hub to every SSO user. Read on each request, no restart needed.
+HUB_USERS_FILE = Path(__file__).parent / "hub_users.txt"
 WORKSHOPS_DIR = Path(__file__).parent / "workshops"  # keys.json + keys_all.json per workshop
 
 app = FastAPI()
@@ -125,6 +129,17 @@ def _formgrader_allowed_users() -> set[str]:
         for line in FORMGRADER_USERS_FILE.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     }
+
+
+def _hub_user_allowed(user: str) -> bool:
+    if not HUB_USERS_FILE.exists():
+        return True
+    allowed = {
+        line.strip()
+        for line in HUB_USERS_FILE.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    return user in allowed
 
 
 def _check_formgrader_access(request: Request) -> str:
@@ -448,6 +463,8 @@ async def hub_redirect():
 async def hub_proxy(request: Request, path: str):
     """Reverse proxy HTTP requests to mograder hub on RONIN."""
     user = _require_sso_user(request)
+    if not _hub_user_allowed(user):
+        raise HTTPException(status_code=403, detail="The hub is not open yet")
     return await _proxy_http(
         request, MORIARTY_HUB, path, user,
         timeout=60.0, service_name="Hub",
@@ -459,7 +476,7 @@ async def hub_proxy(request: Request, path: str):
 async def hub_ws_proxy(ws: WebSocket, path: str):
     """Reverse proxy WebSocket connections to mograder hub on RONIN."""
     user = ws.headers.get("x-remote-user", "")
-    if not user:
+    if not user or not _hub_user_allowed(user):
         await ws.close(code=4003, reason="Forbidden")
         return
     await _proxy_ws(
