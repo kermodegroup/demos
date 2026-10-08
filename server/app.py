@@ -428,6 +428,12 @@ _FORMGRADER_DOWN_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+@app.get("/live/grader")
+async def formgrader_redirect():
+    """Redirect /live/grader to /live/grader/ so the {path:path} pattern matches."""
+    return RedirectResponse("/live/grader/")
+
+
 @app.api_route("/live/grader/{path:path}", methods=PROXY_METHODS)
 async def formgrader_proxy(request: Request, path: str):
     """Reverse proxy HTTP requests to the formgrader on RONIN (via the tunnel)."""
