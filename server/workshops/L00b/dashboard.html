@@ -34,7 +34,7 @@
 const EXERCISES = ["Q1", "Q2", "Q3", "Q4"];
 let TOKEN = 'sso';
 
-function api(path, opts) {
+function api(path, opts) { path = '.' + path;
   const sep = path.includes('?') ? '&' : '?';
   return fetch(path + sep + 'token=' + TOKEN, opts);
 }
