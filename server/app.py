@@ -238,9 +238,8 @@ def index():
     </head>
     <body>
         <h1>SciML Notebooks</h1>
-        <p>Interactive notebooks for teaching Scientific Machine Learning (ES98E) and
-        Predictive Modelling and Uncertainty Quantification (PX914)
-        in the <a href="https://warwick.ac.uk/HetSys">HetSys CDT</a>
+        <p>Interactive notebooks for teaching Scientific Machine Learning
+        (ES98E and PX914) in the <a href="https://warwick.ac.uk/HetSys">HetSys CDT</a>
         and <a href="https://warwick.ac.uk/pmsc">Predictive Modelling and Scientific Computing MSc</a>,
         developed by <a href="https://warwick.ac.uk/jrkermode">James Kermode</a>.</p>
 
