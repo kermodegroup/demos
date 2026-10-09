@@ -68,13 +68,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create marimo server for live notebooks (mounted at /live)
-server = marimo.create_asgi_app()
-live_notebooks = []
-for notebook in sorted(NOTEBOOKS_DIR.glob("*.py")):
-    name = notebook.stem
-    server = server.with_app(path=f"/{name}", root=str(notebook))
-    live_notebooks.append(name)
+# Live notebooks (JAX demos) run on the mograder hub as "demo" items, one
+# process per visitor, opened by deep link /live/hub/run/<name>/. They used
+# to run here, inside this proxy process (shared with the hub and grader
+# proxies), so they are no longer mounted: the names (notebooks/ on the
+# server) drive the index page, and old /live/<name>/ links redirect.
+live_notebooks = [nb.stem for nb in sorted(NOTEBOOKS_DIR.glob("*.py"))]
 
 # Create marimo server for public demos (mounted at /demos)
 demo_server = marimo.create_asgi_app()
@@ -166,14 +165,38 @@ def get_sort_key(name):
     return (1, name)
 
 
-@app.get("/", response_class=HTMLResponse)
-def index():
-    all_notebooks = []
+_hub_status = {"up": False, "checked": 0.0}
 
-    # Add live notebooks (served at /live, SSO protected)
+
+async def _hub_up() -> bool:
+    """Is the hub reachable through its tunnel? (cached 30 s; any HTTP
+    answer counts, the hub itself returns 403 without a user)"""
+    import time as _time
+
+    if _time.monotonic() - _hub_status["checked"] < 30:
+        return _hub_status["up"]
+    try:
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            await client.get(f"{MORIARTY_HUB}/")
+        up = True
+    except httpx.HTTPError:
+        up = False
+    _hub_status.update(up=up, checked=_time.monotonic())
+    return up
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    all_notebooks = []
+    hub_up = await _hub_up()
+
+    # Live notebooks: demos on the hub (SSO). While the hub is down they are
+    # listed without a link or LIVE badge (molab still works)
     for name in live_notebooks:
         if name not in config_by_name or not config_by_name[name].get("hidden", False):
-            all_notebooks.append((name, f"/live/{name}/", "live"))
+            all_notebooks.append(
+                (name, f"/live/hub/run/{name}/", "live" if hub_up else "offline")
+            )
 
     # Add WASM notebooks (redirect via /wasm/ to GitHub Pages)
     for name in wasm_notebooks:
@@ -187,10 +210,17 @@ def index():
     all_notebooks.sort(key=lambda x: get_sort_key(x[0]))
 
     def _item(name, url, badge_type):
+        molab = (
+            f'<a href="/molab/{name}/" class="molab-link" title="Open in molab (no login required)">molab</a>'
+            if name in molab_urls
+            else ""
+        )
+        if badge_type == "offline":  # hub down: no link, no LIVE badge
+            return f'<li><span class="offline">{get_display_title(name)}</span>{molab}</li>'
         return (
             f'<li><a href="{url}">{get_display_title(name)}</a>'
             f'<span class="badge {badge_type}">{badge_type.upper()}</span>'
-            + (f'<a href="/molab/{name}/" class="molab-link" title="Open in molab (no login required)">molab</a>' if name in molab_urls else '')
+            + molab
             + '</li>'
         )
 
@@ -234,6 +264,7 @@ def index():
             .hub .btn {{ display: inline-block; background: #5f259f; color: #fff; padding: 0.6em 1.3em; border-radius: 6px; font-size: 1.15em; font-weight: 600; margin-top: 0.4em; }}
             .hub .btn:hover {{ background: #4a1d7a; text-decoration: none; }}
             .staff {{ margin: 0.6em 0 0; }}
+            .offline {{ color: #777; font-size: 1.1em; }}
         </style>
     </head>
     <body>
@@ -248,7 +279,7 @@ def index():
             SciML notebook hub. Run a lecture, or edit and submit your own copy of a
             workshop, in the browser.</p>
             <a class="btn" href="/live/hub/">Open the SciML hub &rarr;</a>
-            <p style="font-size:0.85em;color:#555">University of Warwick SSO login.</p>
+            <p style="font-size:0.85em;color:#555">University of Warwick SSO login.{"" if hub_up else " <strong>The hub is offline at the moment</strong>: LIVE demos are unavailable; WASM and molab notebooks still work."}</p>
             {"" if not grader_enabled else '<p class="staff" id="staff-links" hidden><a href="/live/grader/">Formgrader</a> <span class="badge grader">STAFF</span></p>'}
         </div>
 
@@ -629,7 +660,13 @@ if WIKI_DIR.exists():
     app.mount("/live/wiki", StaticFiles(directory=str(WIKI_DIR), html=True), name="wiki")
 
 # Mount marimo server at /live (SSO protected path)
-app.mount("/live", server.build())
+@app.api_route("/live/{name}/{path:path}", methods=["GET", "HEAD"])
+@app.api_route("/live/{name}", methods=["GET", "HEAD"])
+async def live_demo_redirect(name: str, path: str = ""):
+    """Old live-notebook links (slides, QR codes) → the demo on the hub."""
+    if name not in live_notebooks:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return RedirectResponse(f"/live/hub/run/{name}/")
 
 # Mount marimo server at /demos (public path)
 app.mount("/demos", demo_server.build())
