@@ -1,67 +1,84 @@
 # Demo configuration - controls index page display
-# Order determines display order; title overrides auto-generated name
+# Order determines display order (groups appear in order of first use);
+# title overrides the auto-generated name; group = heading on the index page
 
 [[demos]]
 name = "probability-demo"
 title = "Probability Distributions"
+group = "Probability"
 
 [[demos]]
 name = "basis-demo"
 title = "Basis Function Explorer"
+group = "Regression"
 
 [[demos]]
 name = "regression-demo"
 title = "Bayesian Regression and UQ"
+group = "Regression"
 
 [[demos]]
 name = "kernel-demo"
 title = "Kernel Explorer"
+group = "Gaussian processes"
 
 [[demos]]
 name = "bayesian-regression-demo"
 title = "Sequential Bayesian Linear Regression"
+group = "Regression"
 
 [[demos]]
 name = "gp-demo"
 title = "GP Regression"
+group = "Gaussian processes"
 
 [[demos]]
 name = "gp-derivative-demo"
 title = "GP with Derivative Observations"
+group = "Gaussian processes"
 
 [[demos]]
 name = "bayesian-optimization-demo"
 title = "Bayesian Optimisation"
+group = "Gaussian processes"
 
 [[demos]]
 name = "mlp-demo"
 title = "MLP Regression"
+group = "Neural networks"
 
 [[demos]]
 name = "bnn-demo"
 title = "BNN Regression (Variational Inference)"
+group = "Neural networks"
 
 [[demos]]
 name = "neural-ode-demo"
 title = "Neural ODE Solver"
+group = "Neural networks"
 
 [[demos]]
 name = "clustering-demo"
 title = "K-Means and GMM Clustering"
+group = "Unsupervised learning"
 
 [[demos]]
 name = "pca-demo"
 title = "PCA Explorer"
+group = "Unsupervised learning"
 
 [[demos]]
 name = "pca-em-demo"
 title = "PCA as an EM Algorithm"
+group = "Unsupervised learning"
 
 [[demos]]
 name = "normalising-flows-demo"
 title = "Normalising Flows"
+group = "Unsupervised learning"
 
 [[demos]]
 name = "uq-kinetics"
 title = "Uncertainty in Models and Data: Reaction Kinetics"
+group = "Uncertainty quantification"
 type = "demo"

@@ -3,7 +3,7 @@ import marimo
 import tomllib
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -186,12 +186,24 @@ def index():
     # Sort by config order, then alphabetically
     all_notebooks.sort(key=lambda x: get_sort_key(x[0]))
 
-    notebook_links = "".join(
-        f'<li><a href="{url}">{get_display_title(name)}</a>'
-        f'<span class="badge {badge_type}">{badge_type.upper()}</span>'
-        + (f'<a href="/molab/{name}/" class="molab-link" title="Open in molab (no login required)">molab</a>' if name in molab_urls else '')
-        + '</li>'
-        for name, url, badge_type in all_notebooks
+    def _item(name, url, badge_type):
+        return (
+            f'<li><a href="{url}">{get_display_title(name)}</a>'
+            f'<span class="badge {badge_type}">{badge_type.upper()}</span>'
+            + (f'<a href="/molab/{name}/" class="molab-link" title="Open in molab (no login required)">molab</a>' if name in molab_urls else '')
+            + '</li>'
+        )
+
+    # Group under topic headings (demos.toml "group"), groups in order of
+    # first appearance; ungrouped notebooks go last under "More"
+    groups: dict[str, list[str]] = {}
+    for name, url, badge_type in all_notebooks:
+        group = config_by_name.get(name, {}).get("group", "More")
+        groups.setdefault(group, []).append(_item(name, url, badge_type))
+    if "More" in groups:
+        groups["More"] = groups.pop("More")
+    notebook_sections = "".join(
+        f'<h3>{group}</h3><ul>{"".join(items)}</ul>' for group, items in groups.items()
     )
 
     return f"""
@@ -199,11 +211,14 @@ def index():
     <html>
     <head>
         <title>SciML - University of Warwick</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: system-ui, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }}
+            body {{ font-family: system-ui, sans-serif; max-width: 800px; margin: 50px auto; padding: 0 16px; }}
             h1 {{ color: #5f259f; }}
-            ul {{ list-style: none; padding: 0; }}
-            li {{ margin: 10px 0; }}
+            h2 {{ color: #5f259f; margin-top: 2em; }}
+            h3 {{ margin: 1.4em 0 0.3em; font-size: 1em; color: #444; text-transform: uppercase; letter-spacing: 0.04em; }}
+            ul {{ list-style: none; padding: 0; margin: 0; }}
+            li {{ margin: 8px 0; }}
             a {{ color: #0066cc; text-decoration: none; font-size: 1.1em; }}
             a:hover {{ text-decoration: underline; }}
             .badge {{ font-size: 0.7em; padding: 2px 6px; border-radius: 3px; margin-left: 8px; text-transform: uppercase; }}
@@ -214,18 +229,33 @@ def index():
             .molab-link {{ font-size: 0.75em; padding: 2px 6px; border-radius: 3px; margin-left: 6px; background: #e8d5f5; color: #5f259f; text-decoration: none; }}
             .molab-link:hover {{ background: #d4b8eb; text-decoration: none; }}
             .note {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 1em; margin: 1.5em 0; }}
+            .hub {{ background: #f3ecfa; border: 2px solid #5f259f; border-radius: 10px; padding: 1.2em 1.4em; margin: 1.5em 0 1em; }}
+            .hub p {{ margin: 0.4em 0; }}
+            .hub .btn {{ display: inline-block; background: #5f259f; color: #fff; padding: 0.6em 1.3em; border-radius: 6px; font-size: 1.15em; font-weight: 600; margin-top: 0.4em; }}
+            .hub .btn:hover {{ background: #4a1d7a; text-decoration: none; }}
+            .staff {{ margin: 0.6em 0 0; }}
         </style>
     </head>
     <body>
         <h1>SciML Notebooks</h1>
-        <p>Interactive scientific machine learning demonstrations.
-        Developed by <a href="https://warwick.ac.uk/jrkermode">James Kermode</a>
-        to support teaching of Scientific Machine Learning (ES98E) and
+        <p>Interactive notebooks for teaching Scientific Machine Learning (ES98E) and
         Predictive Modelling and Uncertainty Quantification (PX914)
         in the <a href="https://warwick.ac.uk/HetSys">HetSys CDT</a>
-        and <a href="https://warwick.ac.uk/pmsc">Predictive Modelling and Scientific Computing MSc</a>.</p>
-        <ul>{notebook_links}</ul>
-        {"" if not grader_enabled else '<p><a href="/live/grader/">Formgrader</a> <span class="badge grader">STAFF</span></p>'}
+        and <a href="https://warwick.ac.uk/pmsc">Predictive Modelling and Scientific Computing MSc</a>,
+        developed by <a href="https://warwick.ac.uk/jrkermode">James Kermode</a>.</p>
+
+        <div class="hub">
+            <p><strong>Students on the module:</strong> lectures and workshops run on the
+            SciML notebook hub. Run a lecture, or edit and submit your own copy of a
+            workshop, in the browser.</p>
+            <a class="btn" href="/live/hub/">Open the SciML hub &rarr;</a>
+            <p style="font-size:0.85em;color:#555">University of Warwick SSO login.</p>
+            {"" if not grader_enabled else '<p class="staff" id="staff-links" hidden><a href="/live/grader/">Formgrader</a> <span class="badge grader">STAFF</span></p>'}
+        </div>
+
+        <h2>Demonstrations</h2>
+        {notebook_sections}
+
         <div class="note">
             <p><strong>WASM</strong> notebooks run in your browser (no login required).
             <strong>LIVE</strong> notebooks require University of Warwick SSO.
@@ -235,6 +265,20 @@ def index():
             no login or installation required. Useful for external collaborators
             and students without a Warwick account.</p>
         </div>
+        <script>
+        // Staff links (formgrader) only for formgrader users: this page is
+        // public, so ask the SSO-protected /live/whoami. Without an SSO
+        // session the request is redirected to the login page (not
+        // followed), and the links stay hidden.
+        (function () {{
+            var el = document.getElementById("staff-links");
+            if (!el) return;
+            fetch("/live/whoami", {{credentials: "same-origin", redirect: "manual"}})
+                .then(function (r) {{ return r.ok ? r.json() : null; }})
+                .then(function (d) {{ if (d && d.grader) el.hidden = false; }})
+                .catch(function () {{}});
+        }})();
+        </script>
     </body>
     </html>
     """
@@ -464,6 +508,17 @@ async def formgrader_ws_proxy(ws: WebSocket, path: str):
     await _proxy_ws(
         ws, FORMGRADER.replace("http", "ws", 1), f"live/grader/{path}", user,
         service_name="formgrader",
+    )
+
+
+@app.get("/live/whoami")
+async def whoami(request: Request):
+    """Who is logged in (SSO) and whether they get staff links: the public
+    landing page asks this to show the formgrader link only to its users."""
+    user = request.headers.get("x-remote-user", "")
+    return JSONResponse(
+        {"user": user, "grader": bool(user) and user in _formgrader_allowed_users()},
+        headers={"Cache-Control": "no-store"},
     )
 
 
