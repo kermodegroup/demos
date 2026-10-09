@@ -326,10 +326,14 @@ async def _proxy_http(
             detail=f"{service_name} server is not responding",
         )
 
-    response_headers = {
-        k: v for k, v in resp.headers.items() if k.lower() not in _HOP_BY_HOP
-    }
-    return Response(content=resp.content, status_code=resp.status_code, headers=response_headers)
+    # multi_items: keep repeated headers apart (a dict would merge several
+    # Set-Cookie headers into one, which browsers then misread)
+    response = Response(content=resp.content, status_code=resp.status_code)
+    for k, v in resp.headers.multi_items():
+        # content-length: Response has set it for the body actually sent
+        if k.lower() not in _HOP_BY_HOP and k.lower() != "content-length":
+            response.headers.append(k, v)
+    return response
 
 
 async def _proxy_ws(
@@ -348,9 +352,14 @@ async def _proxy_ws(
         target_url += f"?{ws.url.query}"
 
     try:
+        # cookies too: the upstream app reads per-browser settings from them
+        # on the WebSocket (e.g. an instructor's "view as student" switch)
+        upstream_headers = {"x-remote-user": user}
+        if ws.headers.get("cookie"):
+            upstream_headers["cookie"] = ws.headers["cookie"]
         async with websockets.connect(
             target_url,
-            additional_headers={"x-remote-user": user},
+            additional_headers=upstream_headers,
             max_size=None,
             ping_interval=20,
             ping_timeout=20,
