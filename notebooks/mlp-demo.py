@@ -3,7 +3,7 @@
 # dependencies = [
 #     "marimo",
 #     "numpy==2.2.5",
-#     "qrcode==8.2",
+#     "qrcode[pil]==8.2",
 #     "jax",
 #     "jaxlib",
 #     "equinox",

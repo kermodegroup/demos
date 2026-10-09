@@ -5,7 +5,7 @@
 #     "matplotlib==3.10.1",
 #     "numpy==2.2.5",
 #     "seaborn==0.13.2",
-#     "qrcode==8.2",
+#     "qrcode[pil]==8.2",
 #     "jax",
 #     "jaxlib",
 #     "equinox",
