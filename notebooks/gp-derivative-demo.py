@@ -51,7 +51,7 @@ def _(mo):
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            align-items: stretch;
+            align-items: center;
             z-index: 1;
             overflow: hidden;
         }
@@ -487,7 +487,7 @@ def _(
     f_band = alt.Chart(band_df).mark_area(
         opacity=0.3, color='#1f77b4'
     ).encode(
-        x=alt.X('x:Q', scale=x_scale, title='x'),
+        x=alt.X('x:Q', scale=x_scale, title='x', axis=alt.Axis(values=[-2, -1, 0, 1, 2])),
         y=alt.Y('y_lower:Q', scale=y_scale_f, title='f(x)'),
         y2='y_upper:Q'
     )
@@ -578,8 +578,12 @@ def _(
     ).add_params(click_select)
     f_layers.append(f_click_layer)
 
+    # Square plot area: both axes span [-2, 2], so equal pixel width and
+    # height draw a slope-s tangent at its true angle. (width='container'
+    # collapsed to ~140 px inside the flex layout, and was never square.)
+    plot_size = 340 if show_deriv else 440  # fits a 900 px tall window
     f_chart = alt.layer(*f_layers).properties(
-        width='container', height=280 if show_deriv else 400,
+        width=plot_size, height=plot_size,
         title='Function f(x)'
     )
 
@@ -589,7 +593,7 @@ def _(
         df_band = alt.Chart(dband_df).mark_area(
             opacity=0.3, color='#ff7f0e'
         ).encode(
-            x=alt.X('x:Q', scale=x_scale, title='x'),
+            x=alt.X('x:Q', scale=x_scale, title='x', axis=alt.Axis(values=[-2, -1, 0, 1, 2])),
             y=alt.Y('y_lower:Q', scale=y_scale_df, title="f'(x)"),
             y2='y_upper:Q'
         )
@@ -646,7 +650,7 @@ def _(
         df_layers.append(df_click_layer)
 
         df_chart = alt.layer(*df_layers).properties(
-            width='container', height=200,
+            width=plot_size, height=150,
             title="Derivative f'(x)"
         )
 
