@@ -242,6 +242,73 @@ def _(BayesianRidge, np):
     return ConformalPrediction, MyBayesianRidge
 
 
+@app.cell
+def _(MyBayesianRidge, np):
+    class CR3Regression(MyBayesianRidge):
+        """Cluster-robust (CR3) delete-one-cluster jackknife covariance on top of Bayesian ridge.
+
+        After the Bayesian ridge fit (precision A = alpha Phi^T Phi + lambda I, A^-1 = sigma_), each cluster k of
+        training points (contiguous in x, `cluster_size` points) gives its PRESS pull
+            g_k = Psi_k^T (I - H_kk)^-1 rho_k,   H_kk = Psi_k A^-1 Psi_k^T,
+        with whitened rows Psi = sqrt(alpha) Phi and residuals rho = sqrt(alpha) (y - Phi theta).  Deleting cluster
+        k moves the fit by exactly A^-1 g_k (no refit), and the CR3 covariance is the spread of those shifts,
+            Sigma_CR3 = A^-1 [sum_k (g_k - gbar)(g_k - gbar)^T] A^-1.
+        It measures how much the fit depends on which data it saw, so unlike the posterior it does not collapse when
+        the model is misspecified.  Like any sampling variance it shrinks with N, so it is scaled by one factor
+        lambda: the RMS standardised error on the calibration set (lambda = 1 without calibration)."""
+
+        def __init__(self, cluster_size=1, **kw):
+            super().__init__(**kw)
+            self.cluster_size = cluster_size
+
+        def fit(self, X, y, x_order=None):
+            super().fit(X, y)
+            n = len(y)
+            order = np.argsort(x_order) if x_order is not None else np.arange(n)
+            k = max(1, int(self.cluster_size))
+            clusters = [order[i:i + k] for i in range(0, n, k)]
+            Ai = self.sigma_
+            sa = np.sqrt(self.alpha_)
+            Psi, rho = sa * X, sa * (y - X @ self.coef_)
+            G = []
+            for idx in clusters:
+                P = Psi[idx]
+                H = P @ Ai @ P.T
+                G.append(P.T @ np.linalg.solve(np.eye(len(idx)) - H, rho[idx]))
+            G = np.array(G)
+            self.shifts_ = G @ Ai                       # theta_hat - theta_hat_(-k), one row per cluster
+            Gc = G - G.mean(0)
+            self.cov_cr3_ = Ai @ (Gc.T @ Gc) @ Ai
+            self.n_clusters_ = len(clusters)
+            self.scale_ = 1.0
+            return self
+
+        def calibrate(self, X_calib, y_calib, aleatoric=False):
+            """lambda = RMS of (y - y_hat) / sigma_CR3 on held-out data (the noise term enters when aleatoric)."""
+            mu, sd = self.predict(X_calib, return_std=True, aleatoric=aleatoric, rescale=False)
+            self.scale_ = float(np.sqrt(np.mean(((y_calib - mu) / sd) ** 2)))
+            return self.scale_
+
+        def predict(self, X, return_std=False, aleatoric=False, rescale=True):
+            y_pred = X @ self.coef_ + self.intercept_
+            if not return_std:
+                return y_pred
+            lam = self.scale_ if rescale else 1.0
+            y_var = lam ** 2 * np.sum((X @ self.cov_cr3_) * X, axis=1)
+            if aleatoric:
+                y_var = y_var + 1.0 / self.alpha_
+            return y_pred, np.sqrt(np.maximum(y_var, 0.0))
+
+        def loo_log_likelihood(self, X, y, aleatoric=False):
+            return None                                  # the Bayesian LOO does not apply to the CR3 covariance
+
+        def deletion_fits(self, X, n_max=10):
+            """Predictions of the exact leave-one-cluster-out refits (the jackknife replicates)."""
+            idx = np.linspace(0, len(self.shifts_) - 1, min(n_max, len(self.shifts_))).astype(int)
+            return X @ (self.coef_[None, :] - self.shifts_[idx]).T + self.intercept_
+    return (CR3Regression,)
+
+
 
 
 @app.cell
@@ -1557,6 +1624,7 @@ def _(np):
 
 @app.cell(hide_code=True)
 def _(
+    CR3Regression,
     ConformalPrediction,
     MyBayesianRidge,
     N_samples,
@@ -1571,6 +1639,7 @@ def _(
     bump_kernel,
     compute_kernel_matrix,
     conformal,
+    cr3,
     crps_ensemble,
     crps_gaussian,
     crps_quantile_approx,
@@ -1582,6 +1651,8 @@ def _(
     get_basis_lengthscale,
     get_basis_type,
     get_calib_frac,
+    get_cr3_calibrate,
+    get_cr3_cluster_size,
     get_custom_basis_code,
     get_custom_function_code,
     get_custom_kernel_code,
@@ -1740,6 +1811,8 @@ def _(
                 percentile_clipping=get_percentile_clipping()
             )
     c = ConformalPrediction(fit_intercept=False)
+    cr3_model = CR3Regression(cluster_size=get_cr3_cluster_size(), fit_intercept=False)
+    cr3_scale = None
     q = QuantileRegressionUQ(confidence=get_quantile_confidence(), fit_intercept=False, alpha=get_quantile_regularization())
 
     ax.plot(X_test[:, 0], y_test, 'k-', label='Truth')
@@ -1791,6 +1864,8 @@ def _(
             models_to_plot.append((p, Phi_train, Phi_test, 'C0', 'POPS regression', True))
         if quantile.value:
             models_to_plot.append((q, Phi_train, Phi_test, 'C4', 'Quantile regression', True))
+        if cr3.value:
+            models_to_plot.append((cr3_model, Phi_train, Phi_test, 'C6', 'CR3 jackknife', True))
         if gp_regression.value and _custom_kernel_error is None:
             models_to_plot.append((None, X_train, X_test, 'C3', 'GP regression', False))
         if neural_network.value:
@@ -1878,7 +1953,14 @@ def _(
             y_pred, y_std = nn.predict(X_test_model, return_std=True)
         else:
             # Existing polynomial-basis models
-            model.fit(X_train_model, y_train)
+            if label == 'CR3 jackknife':
+                model.fit(X_train_model, y_train, x_order=X_train[:, 0])   # clusters contiguous in x
+                if get_cr3_calibrate() and len(y_calib) > 1:
+                    cr3_scale = model.calibrate(Phi_calib, y_calib, aleatoric=aleatoric.value)
+                else:
+                    cr3_scale = 1.0
+            else:
+                model.fit(X_train_model, y_train)
 
             # Store log ML for Bayesian models
             if label in ['Bayesian uncertainty', 'Conformal prediction']:
@@ -2016,6 +2098,15 @@ def _(
             except Exception:
                 pass  # Skip if sampling fails
 
+        elif label == 'CR3 jackknife' and get_show_samples_linear():
+            # The exact leave-one-cluster-out refits: the jackknife replicates whose spread is the CR3 covariance
+            try:
+                _reps = model.deletion_fits(X_test_model, n_max=get_n_samples_linear())
+                for i in range(_reps.shape[1]):
+                    ax.plot(X_test[:, 0], _reps[:, i], color=color, alpha=0.4, lw=1)
+            except Exception:
+                pass
+
         elif label == 'GP regression' and get_show_samples_gp():
             # Sample from GP posterior
             try:
@@ -2078,7 +2169,7 @@ def _(
     plt.tight_layout()
 
     # Add inset plot based on most recently enabled method
-    linear_methods_active = bayesian.value or conformal.value or pops.value or quantile.value
+    linear_methods_active = bayesian.value or conformal.value or pops.value or quantile.value or cr3.value
     last_method = get_last_enabled_method()
 
     # Determine which inset to show based on last enabled method
@@ -2284,18 +2375,21 @@ def _(
         {mo.center(fig)}
     </div>
     ''')
-    return bayes_log_ml, gp_log_ml, gp_sparsity, metrics_dict, n, qhat
+    return bayes_log_ml, cr3_scale, gp_log_ml, gp_sparsity, metrics_dict, n, qhat
 
 
 @app.cell
 def _(
     bayesian,
     conformal,
+    cr3,
     get_N_samples,
     get_basis_lengthscale,
     get_basis_ls_enabled,
     get_basis_type,
     get_calib_frac,
+    get_cr3_calibrate,
+    get_cr3_cluster_size,
     get_custom_basis_code,
     get_custom_function_code,
     get_custom_kernel_code,
@@ -2336,6 +2430,8 @@ def _(
     set_basis_ls_enabled,
     set_basis_type,
     set_calib_frac,
+    set_cr3_calibrate,
+    set_cr3_cluster_size,
     set_custom_basis_code,
     set_custom_function_code,
     set_custom_kernel_code,
@@ -2399,7 +2495,7 @@ def _(
     filter_invert = mo.ui.checkbox(get_filter_invert(), label="Keep inside (invert)", on_change=set_filter_invert)
 
     # Regression parameters with conditional styling
-    reg_enabled = bayesian.value or conformal.value or pops.value or quantile.value
+    reg_enabled = bayesian.value or conformal.value or pops.value or quantile.value or cr3.value
 
     if reg_enabled:
         # Use fixed default value (not state) to avoid circular dependency
@@ -2462,6 +2558,14 @@ def _(
         pops_posterior_radio = mo.Html(f"<div style='opacity: 0.4;'>{mo.ui.radio(options=['hypercube', 'ensemble'], value=get_pops_posterior(), label='Posterior', disabled=True)}</div>")
         leverage_percentile_slider = mo.Html(f"<div style='opacity: 0.4;'>{mo.ui.slider(0.0, 50.0, 1.0, get_leverage_percentile(), label='Leverage percentile', disabled=True)}</div>")
         percentile_clipping = mo.Html(f"<div style='opacity: 0.4;'>{mo.ui.slider(0, 10, 1, get_percentile_clipping(), label='Percentile clipping', disabled=True, on_change=set_percentile_clipping)}</div>")
+
+    # CR3 jackknife section with conditional styling
+    if cr3.value:
+        cr3_cluster_slider = mo.ui.slider(1, 20, 1, get_cr3_cluster_size(), label="Cluster size", on_change=set_cr3_cluster_size)
+        cr3_calibrate_box = mo.ui.checkbox(get_cr3_calibrate(), label="Scale λ from calibration set", on_change=set_cr3_calibrate)
+    else:
+        cr3_cluster_slider = mo.Html(f"<div style='opacity: 0.4;'>{mo.ui.slider(1, 20, 1, get_cr3_cluster_size(), label='Cluster size', disabled=True)}</div>")
+        cr3_calibrate_box = mo.Html(f"<div style='opacity: 0.4;'>{mo.ui.checkbox(get_cr3_calibrate(), label='Scale λ from calibration set', disabled=True)}</div>")
 
     # Quantile regression section with conditional styling
     if quantile.value:
@@ -2573,14 +2677,18 @@ def _(
         quantile_regularization
     ])
 
-    # Second column: Conformal Prediction and POPS regression
+    # Second column: Conformal Prediction, POPS regression and CR3 jackknife
     linear_col2 = mo.vstack([
         mo.left(conformal),
         calib_frac, zeta, cp_separator,
         mo.left(pops),
         pops_posterior_radio,
         leverage_percentile_slider,
-        percentile_clipping
+        percentile_clipping,
+        mo.Html("<hr style='margin: 5px 0; border: 0; border-top: 1px solid #ddd;'>"),
+        mo.left(cr3),
+        cr3_cluster_slider,
+        cr3_calibrate_box
     ])
 
     linear_methods_content = mo.Html(f'''
@@ -2813,6 +2921,8 @@ def _(
     bayes_log_ml,
     bayesian,
     conformal,
+    cr3,
+    cr3_scale,
     gp_log_ml,
     gp_optimize_button,
     gp_regression,
@@ -2831,6 +2941,9 @@ def _(
     if conformal.value:
         output_items.append(f"Calibration size (n): {n}")
         output_items.append(f"Quantile (q̂): {qhat:.2f}")
+
+    if cr3.value and cr3_scale is not None:
+        output_items.append(f"CR3 scale (λ): {cr3_scale:.2f}")
 
     if gp_regression.value:
         # Add optimized hyperparameters if available
@@ -2878,6 +2991,8 @@ def _(mo, set_last_enabled_method):
                           on_change=lambda v: set_last_enabled_method('linear') if v else None)
     quantile = mo.ui.checkbox(False, label="<b>Quantile regression</b>",
                               on_change=lambda v: set_last_enabled_method('linear') if v else None)
+    cr3 = mo.ui.checkbox(False, label="<b>CR3 jackknife</b>",
+                         on_change=lambda v: set_last_enabled_method('linear') if v else None)
     gp_regression = mo.ui.checkbox(False, label="<b>GP regression</b>",
                                     on_change=lambda v: set_last_enabled_method('gp') if v else None)
     neural_network = mo.ui.checkbox(False, label="<b>Neural network</b>",
@@ -2886,6 +3001,7 @@ def _(mo, set_last_enabled_method):
     return (
         bayesian,
         conformal,
+        cr3,
         gp_regression,
         gp_use_basis_mean,
         neural_network,
@@ -2931,6 +3047,8 @@ def _(mo):
     get_percentile_clipping, set_percentile_clipping = mo.state(0)
     get_pops_posterior, set_pops_posterior = mo.state('ensemble')
     get_leverage_percentile, set_leverage_percentile = mo.state(0.0)
+    get_cr3_cluster_size, set_cr3_cluster_size = mo.state(1)
+    get_cr3_calibrate, set_cr3_calibrate = mo.state(True)
 
     # GP-specific state
     get_gp_kernel_type, set_gp_kernel_type = mo.state('rbf')
@@ -2983,6 +3101,8 @@ def _(mo):
         get_basis_ls_enabled,
         get_basis_type,
         get_calib_frac,
+        get_cr3_calibrate,
+        get_cr3_cluster_size,
         get_custom_basis_code,
         get_custom_function_code,
         get_custom_kernel_code,
@@ -3023,6 +3143,8 @@ def _(mo):
         set_basis_ls_enabled,
         set_basis_type,
         set_calib_frac,
+        set_cr3_calibrate,
+        set_cr3_cluster_size,
         set_custom_basis_code,
         set_custom_function_code,
         set_custom_kernel_code,
