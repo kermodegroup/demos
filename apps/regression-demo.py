@@ -117,13 +117,14 @@ def _(mo):
     # scene sets their defaults at load time rather than changing them live.
     # Scenes 1-5 use near-deterministic labels (sigma = 0.011), as for DFT-trained interatomic potentials, where the
     # error is approximation error; scene 6 adds label noise (sigma = 0.101) to show where the posterior is right.
+    # The LJ scenes keep data inside r = x/5 + 1.5 > 0 (filter [-7.5, 10], keep inside), where the truth is defined.
     SCENES = {
-        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011, methods={"bayesian"}),
-        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011,
+        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011, methods={"bayesian"}),
+        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011,
                              methods={"bayesian", "conformal"}),
-        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011,
+        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011,
                         methods={"bayesian", "conformal", "pops"}),
-        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011,
+        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011,
                        methods={"bayesian", "conformal", "pops", "cr3"}, samples=True),
         "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6, sigma=0.011,
                           methods={"conformal", "pops", "cr3"}),
@@ -1745,6 +1746,8 @@ def _(
         X_train = x_train[:, None]
 
         x_test = np.linspace(-10, 10, 1000)
+        if function_type == 'lj':
+            x_test = x_test[x_test >= -7.5]   # r = x/5 + 1.5 > 0: the LJ truth is defined only there
         y_test = g(x_test, 0, function_type=function_type, custom_code=custom_code)
         X_test = x_test[:, None]
 
@@ -2188,7 +2191,7 @@ def _(
         # Quantile regression: skip (no posterior to sample)
 
     # No title needed - all info is in the dashboard and outputs bar
-    ax.set_xlim(-10, 10)
+    ax.set_xlim(X_test[:, 0].min(), 10)
     ax.set_ylim(-1.5, 1.5)
     ax.set_xlabel('$x$')
     ax.set_ylabel('$y$')
@@ -3083,7 +3086,7 @@ def _(mo, scene):
     get_seed, set_seed = mo.state(0)
     get_filter_min, set_filter_min = mo.state(scene.get('filter', (0.0, 5.0))[0])
     get_filter_max, set_filter_max = mo.state(scene.get('filter', (0.0, 5.0))[1])
-    get_filter_invert, set_filter_invert = mo.state(False)
+    get_filter_invert, set_filter_invert = mo.state(scene.get('invert', False))
     get_function_type, set_function_type = mo.state(scene.get('function', 'sin'))
     get_custom_function_code, set_custom_function_code = mo.state(
         "# Define y as a function of X (numpy array)\n"
