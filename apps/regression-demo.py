@@ -109,6 +109,31 @@ def _():
     )
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    # Demo scenes, chosen with ?scene=<name> in the URL (the links in the Data tab reload the page with it).
+    # Each sets the starting values of the controls; everything can still be changed by hand afterwards.
+    # The P slider and method checkboxes are deliberately not driven by state (circular dependencies), so a
+    # scene sets their defaults at load time rather than changing them live.
+    SCENES = {
+        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(10.0, 10.0), P=10, methods={"bayesian"}),
+        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(10.0, 10.0), P=10, methods={"bayesian", "conformal"}),
+        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(10.0, 10.0), P=10, methods={"bayesian", "conformal", "pops"}),
+        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(10.0, 10.0), P=10,
+                       methods={"bayesian", "conformal", "pops", "cr3"}, samples=True),
+        "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6,
+                          methods={"conformal", "pops", "cr3"}),
+        "sin-p14": dict(title="6 · Well specified (sin, P = 14)", function="sin", filter=(0.0, 5.0), P=14,
+                        methods={"bayesian", "conformal", "pops", "cr3"}),
+    }
+    _name = mo.query_params()["scene"]
+    scene = SCENES.get(_name, {})
+    scene_links = " · ".join(f"<a href='?scene={k}' target='_self'>{v['title']}</a>" for k, v in SCENES.items())
+    scene_bar = mo.md(f"**Demo scenes:** {scene_links} · <a href='?' target='_self'>reset</a>"
+                      + (f" — *current: {scene['title']}*" if scene else ""))
+    return SCENES, scene, scene_bar
+
+
 @app.cell
 def _(np):
     def g(X, noise_variance, function_type='sin', custom_code=None):
@@ -2351,15 +2376,31 @@ def _(
                 )
             else:
                 method_crps = crps_gaussian(y_test, method_y_pred, method_y_std)
+        elif method_label == 'Conformal prediction':
+            # The conformal band is the 1 - zeta interval, q-hat times the posterior sd; its Gaussian reading has
+            # sd = half-width / z_{1 - zeta/2} (scoring the half-width itself as the sd would overstate the spread)
+            from scipy.stats import norm as _norm
+            _sd = method_y_std / _norm.ppf(1 - get_zeta() / 2)
+            method_log_lik = gaussian_log_likelihood_per_point(y_test, method_y_pred, _sd)
+            method_crps = crps_gaussian(y_test, method_y_pred, _sd)
         else:
-            # Gaussian methods (Bayesian, GP, POPS, Conformal): use Gaussian formulas
+            # Gaussian methods (Bayesian, GP, POPS, CR3): use Gaussian formulas
             method_log_lik = gaussian_log_likelihood_per_point(y_test, method_y_pred, method_y_std)
             method_crps = crps_gaussian(y_test, method_y_pred, method_y_std)
 
         # Extract LOO log likelihood from extra_data (if available)
         method_loo_log_lik = extra_data.get('loo_log_lik', None)
 
+        # Coverage of the +-1 sd Gaussian interval on the test curve, the same nominal level (68 %) for every method
+        if method_label == 'Conformal prediction':
+            from scipy.stats import norm as _norm
+            _sd1 = method_y_std / _norm.ppf(1 - get_zeta() / 2)
+        else:
+            _sd1 = method_y_std
+        method_cov_1sd = 100 * np.mean(np.abs(y_test - method_y_pred) <= _sd1)
+
         metrics_dict[method_label] = {
+            'cov_1sd': method_cov_1sd,
             'coverage_train_calib': method_coverage_train_calib,
             'coverage_all': method_coverage_all,
             'mean_width': method_mean_width,
@@ -2384,6 +2425,8 @@ def _(
     conformal,
     cr3,
     get_N_samples,
+    scene,
+    scene_bar,
     get_basis_lengthscale,
     get_basis_ls_enabled,
     get_basis_type,
@@ -2500,7 +2543,7 @@ def _(
     if reg_enabled:
         # Use fixed default value (not state) to avoid circular dependency
         # Manual slider changes still update state via on_change, but slider doesn't react to state changes
-        P_slider = mo.ui.slider(1, 15, 1, 10, label="Parameters $P$", on_change=set_P)
+        P_slider = mo.ui.slider(1, 15, 1, scene.get("P", 10), label="Parameters $P$", on_change=set_P)
         P_elem = P_slider  # For display
         def on_basis_type_change(v):
             set_basis_type(v)
@@ -2781,6 +2824,7 @@ def _(
 
     # Data tab: Dataset parameters + custom function accordion
     data_tab = mo.vstack([
+        scene_bar,
         mo.hstack([function_dropdown, N_samples, sigma], justify="start"),
         mo.hstack([filter_range, filter_invert, seed], justify="start"),
         custom_function_accordion,
@@ -2830,6 +2874,7 @@ def _(metrics_dict, mo):
         # Lower is better: mse, crps, fit_time
         all_cov_tc = [m['coverage_train_calib'] for m in metrics_dict.values()]
         all_cov_all = [m['coverage_all'] for m in metrics_dict.values()]
+        all_cov_1sd = [abs(m['cov_1sd'] - 68.3) for m in metrics_dict.values()]   # closest to nominal is best
         all_mse = [m['mse'] for m in metrics_dict.values()]
         all_log_lik = [m['log_likelihood'] for m in metrics_dict.values() if m['log_likelihood'] is not None]
         all_loo = [m['loo_log_lik'] for m in metrics_dict.values() if m['loo_log_lik'] is not None]
@@ -2839,6 +2884,7 @@ def _(metrics_dict, mo):
         # Best/worst values (handle empty lists for optional metrics)
         best_cov_tc, worst_cov_tc = max(all_cov_tc), min(all_cov_tc)
         best_cov_all, worst_cov_all = max(all_cov_all), min(all_cov_all)
+        best_cov_1sd, worst_cov_1sd = min(all_cov_1sd), max(all_cov_1sd)
         best_mse, worst_mse = min(all_mse), max(all_mse)
         best_log_lik = max(all_log_lik) if all_log_lik else None
         worst_log_lik = min(all_log_lik) if all_log_lik else None
@@ -2860,6 +2906,7 @@ def _(metrics_dict, mo):
         for method_name, method_metrics in metrics_dict.items():
             cov_tc = method_metrics['coverage_train_calib']
             cov_all = method_metrics['coverage_all']
+            cov_1sd = method_metrics['cov_1sd']
             mse = method_metrics['mse']
             log_lik = method_metrics['log_likelihood']
             loo = method_metrics['loo_log_lik']
@@ -2869,6 +2916,7 @@ def _(metrics_dict, mo):
             # Get colors for each metric
             cov_tc_color = get_color(cov_tc, best_cov_tc, worst_cov_tc)
             cov_all_color = get_color(cov_all, best_cov_all, worst_cov_all)
+            cov_1sd_color = get_color(abs(cov_1sd - 68.3), best_cov_1sd, worst_cov_1sd)
             mse_color = get_color(mse, best_mse, worst_mse)
             log_lik_color = get_color(log_lik, best_log_lik, worst_log_lik) if log_lik is not None else "inherit"
             loo_color = get_color(loo, best_loo, worst_loo) if loo is not None else "inherit"
@@ -2884,6 +2932,7 @@ def _(metrics_dict, mo):
                 <td style="text-align: left; padding: 3px 6px;"><b>{method_name}</b></td>
                 <td style="text-align: center; padding: 3px 6px; color: {cov_tc_color};">{cov_tc:.1f}%</td>
                 <td style="text-align: center; padding: 3px 6px; color: {cov_all_color};">{cov_all:.1f}%</td>
+                <td style="text-align: center; padding: 3px 6px; color: {cov_1sd_color};">{cov_1sd:.1f}%</td>
                 <td style="text-align: center; padding: 3px 6px; color: {mse_color};">{mse:.4f}</td>
                 <td style="text-align: center; padding: 3px 6px; color: {log_lik_color};">{log_lik_str}</td>
                 <td style="text-align: center; padding: 3px 6px; color: {loo_color};">{loo_str}</td>
@@ -2899,6 +2948,7 @@ def _(metrics_dict, mo):
                     <th style="text-align: left; padding: 5px 10px;">Method</th>
                     <th style="text-align: center; padding: 5px 10px;">Cov (t+c)</th>
                     <th style="text-align: center; padding: 5px 10px;">Cov (all)</th>
+                    <th style="text-align: center; padding: 5px 10px;" title="Coverage of the ±1σ Gaussian interval on the test curve; nominal 68.3 % for every method (conformal: σ = half-width / z)">Cov ±1σ</th>
                     <th style="text-align: center; padding: 5px 10px;">MSE</th>
                     <th style="text-align: center; padding: 5px 10px;">Log Lik</th>
                     <th style="text-align: center; padding: 5px 10px;">LOO</th>
@@ -2911,7 +2961,10 @@ def _(metrics_dict, mo):
             </tbody>
         </table>
         ''')
-        metrics_accordion = mo.accordion({"Performance Metrics": metrics_table})
+        metrics_note = mo.md("<small>Cov (t+c) and Cov (all) use each method's own band: ±1σ, the conformal 1 − ζ interval, or the "
+                             "POPS min–max bounds. <b>Cov ±1σ</b> puts every method at the same nominal 68.3 %. Log Lik and CRPS score the "
+                             "Gaussian reading on the test curve (conformal: σ = half-width / z<sub>1−ζ/2</sub>).</small>")
+        metrics_accordion = mo.accordion({"Performance Metrics": mo.vstack([metrics_table, metrics_note])})
     metrics_accordion
     return
 
@@ -2982,16 +3035,17 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo, set_last_enabled_method):
-    bayesian = mo.ui.checkbox(False, label="<b>Bayesian fit</b>",
+def _(mo, scene, set_last_enabled_method):
+    _on = scene.get('methods', set())
+    bayesian = mo.ui.checkbox('bayesian' in _on, label="<b>Bayesian fit</b>",
                                on_change=lambda v: set_last_enabled_method('linear') if v else None)
-    conformal = mo.ui.checkbox(False, label="<b>Conformal prediction</b>",
+    conformal = mo.ui.checkbox('conformal' in _on, label="<b>Conformal prediction</b>",
                                 on_change=lambda v: set_last_enabled_method('linear') if v else None)
-    pops = mo.ui.checkbox(False, label="<b>POPS regression</b>",
+    pops = mo.ui.checkbox('pops' in _on, label="<b>POPS regression</b>",
                           on_change=lambda v: set_last_enabled_method('linear') if v else None)
     quantile = mo.ui.checkbox(False, label="<b>Quantile regression</b>",
                               on_change=lambda v: set_last_enabled_method('linear') if v else None)
-    cr3 = mo.ui.checkbox(False, label="<b>CR3 jackknife</b>",
+    cr3 = mo.ui.checkbox('cr3' in _on, label="<b>CR3 jackknife</b>",
                          on_change=lambda v: set_last_enabled_method('linear') if v else None)
     gp_regression = mo.ui.checkbox(False, label="<b>GP regression</b>",
                                     on_change=lambda v: set_last_enabled_method('gp') if v else None)
@@ -3018,21 +3072,21 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(mo, scene):
     # Use marimo state to preserve all slider values
     get_N_samples, set_N_samples = mo.state(500)
     get_sigma, set_sigma = mo.state(0.1)
     get_seed, set_seed = mo.state(0)
-    get_filter_min, set_filter_min = mo.state(0.0)
-    get_filter_max, set_filter_max = mo.state(5.0)
+    get_filter_min, set_filter_min = mo.state(scene.get('filter', (0.0, 5.0))[0])
+    get_filter_max, set_filter_max = mo.state(scene.get('filter', (0.0, 5.0))[1])
     get_filter_invert, set_filter_invert = mo.state(False)
-    get_function_type, set_function_type = mo.state('sin')
+    get_function_type, set_function_type = mo.state(scene.get('function', 'sin'))
     get_custom_function_code, set_custom_function_code = mo.state(
         "# Define y as a function of X (numpy array)\n"
         "# Available: np, scipy, math, X\n"
         "y = np.sin(X) + 0.1 * X**2"
     )
-    get_P, set_P = mo.state(10)
+    get_P, set_P = mo.state(scene.get('P', 10))
     get_basis_type, set_basis_type = mo.state('polynomial')
     get_basis_lengthscale, set_basis_lengthscale = mo.state(1.5)  # Default matches LJ ground truth offset
     get_basis_ls_enabled, set_basis_ls_enabled = mo.state(False)  # True for rbf/fourier
@@ -3086,7 +3140,7 @@ def _(mo):
     get_last_enabled_method, set_last_enabled_method = mo.state('linear')
 
     # Per-method posterior samples state
-    get_show_samples_linear, set_show_samples_linear = mo.state(False)
+    get_show_samples_linear, set_show_samples_linear = mo.state(scene.get('samples', False))
     get_n_samples_linear, set_n_samples_linear = mo.state(10)
 
     get_show_samples_gp, set_show_samples_gp = mo.state(False)
