@@ -115,16 +115,20 @@ def _(mo):
     # Each sets the starting values of the controls; everything can still be changed by hand afterwards.
     # The P slider and method checkboxes are deliberately not driven by state (circular dependencies), so a
     # scene sets their defaults at load time rather than changing them live.
+    # Scenes 1-5 use near-deterministic labels (sigma = 0.011), as for DFT-trained interatomic potentials, where the
+    # error is approximation error; scene 6 adds label noise (sigma = 0.101) to show where the posterior is right.
     SCENES = {
-        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(10.0, 10.0), P=10, methods={"bayesian"}),
-        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(10.0, 10.0), P=10, methods={"bayesian", "conformal"}),
-        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(10.0, 10.0), P=10, methods={"bayesian", "conformal", "pops"}),
-        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(10.0, 10.0), P=10,
+        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011, methods={"bayesian"}),
+        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011,
+                             methods={"bayesian", "conformal"}),
+        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011,
+                        methods={"bayesian", "conformal", "pops"}),
+        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(10.0, 10.0), P=10, sigma=0.011,
                        methods={"bayesian", "conformal", "pops", "cr3"}, samples=True),
-        "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6,
+        "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6, sigma=0.011,
                           methods={"conformal", "pops", "cr3"}),
-        "sin-p14": dict(title="6 · Well specified (sin, P = 14)", function="sin", filter=(0.0, 5.0), P=14,
-                        methods={"bayesian", "conformal", "pops", "cr3"}),
+        "sin-noisy": dict(title="6 · Noisy labels: where the posterior is right (sin, P = 14, σ = 0.1)", function="sin",
+                          filter=(0.0, 5.0), P=14, sigma=0.101, methods={"bayesian", "conformal", "pops", "cr3"}),
     }
     _name = mo.query_params()["scene"]
     scene = SCENES.get(_name, {})
@@ -3075,7 +3079,7 @@ def _(mo):
 def _(mo, scene):
     # Use marimo state to preserve all slider values
     get_N_samples, set_N_samples = mo.state(500)
-    get_sigma, set_sigma = mo.state(0.1)
+    get_sigma, set_sigma = mo.state(scene.get('sigma', 0.1))
     get_seed, set_seed = mo.state(0)
     get_filter_min, set_filter_min = mo.state(scene.get('filter', (0.0, 5.0))[0])
     get_filter_max, set_filter_max = mo.state(scene.get('filter', (0.0, 5.0))[1])
