@@ -2889,8 +2889,6 @@ def _(metrics_dict, mo):
         # Compute best/worst for each metric (for coloring)
         # Higher is better: coverage, log_likelihood, loo_log_lik
         # Lower is better: mse, crps, fit_time
-        all_cov_tc = [m['coverage_train_calib'] for m in metrics_dict.values()]
-        all_cov_all = [m['coverage_all'] for m in metrics_dict.values()]
         all_cov_1sd = [abs(m['cov_1sd'] - 68.3) for m in metrics_dict.values()]   # closest to nominal is best
         all_mse = [m['mse'] for m in metrics_dict.values()]
         all_log_lik = [m['log_likelihood'] for m in metrics_dict.values() if m['log_likelihood'] is not None]
@@ -2899,8 +2897,6 @@ def _(metrics_dict, mo):
         all_time = [m['fit_time'] for m in metrics_dict.values()]
 
         # Best/worst values (handle empty lists for optional metrics)
-        best_cov_tc, worst_cov_tc = max(all_cov_tc), min(all_cov_tc)
-        best_cov_all, worst_cov_all = max(all_cov_all), min(all_cov_all)
         best_cov_1sd, worst_cov_1sd = min(all_cov_1sd), max(all_cov_1sd)
         best_mse, worst_mse = min(all_mse), max(all_mse)
         best_log_lik = max(all_log_lik) if all_log_lik else None
@@ -2931,8 +2927,10 @@ def _(metrics_dict, mo):
             m_fit_time = method_metrics['fit_time']
 
             # Get colors for each metric
-            cov_tc_color = get_color(cov_tc, best_cov_tc, worst_cov_tc)
-            cov_all_color = get_color(cov_all, best_cov_all, worst_cov_all)
+            # Cov (t+c) and Cov (all) use each method's own band (+-1 sd, the conformal 1 - zeta interval, POPS min-max
+            # bounds), so their nominal levels differ and "highest" is not "best": left uncoloured.  Cov +-1 sd puts every
+            # method at 68.3 % and is coloured by closeness to it.
+            cov_tc_color = cov_all_color = "inherit"
             cov_1sd_color = get_color(abs(cov_1sd - 68.3), best_cov_1sd, worst_cov_1sd)
             mse_color = get_color(mse, best_mse, worst_mse)
             log_lik_color = get_color(log_lik, best_log_lik, worst_log_lik) if log_lik is not None else "inherit"
@@ -2963,8 +2961,8 @@ def _(metrics_dict, mo):
             <thead>
                 <tr style="border-bottom: 2px solid #dee2e6;">
                     <th style="text-align: left; padding: 5px 10px;">Method</th>
-                    <th style="text-align: center; padding: 5px 10px;">Cov (t+c)</th>
-                    <th style="text-align: center; padding: 5px 10px;">Cov (all)</th>
+                    <th style="text-align: center; padding: 5px 10px;" title="Coverage of each method's own band on train + calibration points; nominal levels differ between methods, so not coloured">Cov (t+c)</th>
+                    <th style="text-align: center; padding: 5px 10px;" title="Coverage of each method's own band on the test curve; nominal levels differ between methods, so not coloured">Cov (all)</th>
                     <th style="text-align: center; padding: 5px 10px;" title="Coverage of the ±1σ Gaussian interval on the test curve; nominal 68.3 % for every method (conformal: σ = half-width / z)">Cov ±1σ</th>
                     <th style="text-align: center; padding: 5px 10px;">MSE</th>
                     <th style="text-align: center; padding: 5px 10px;">Log Lik</th>
@@ -2979,7 +2977,8 @@ def _(metrics_dict, mo):
         </table>
         ''')
         metrics_note = mo.md("<small>Cov (t+c) and Cov (all) use each method's own band: ±1σ, the conformal 1 − ζ interval, or the "
-                             "POPS min–max bounds. <b>Cov ±1σ</b> puts every method at the same nominal 68.3 %. Log Lik and CRPS score the "
+                             "POPS min–max bounds. Their nominal levels differ, so they are not coloured: higher is not better. "
+                             "<b>Cov ±1σ</b> puts every method at the same nominal 68.3 % and is coloured by closeness to it. Log Lik and CRPS score the "
                              "Gaussian reading on the test curve (conformal: σ = half-width / z<sub>1−ζ/2</sub>).</small>")
         metrics_accordion = mo.accordion({"Performance Metrics": mo.vstack([metrics_table, metrics_note])})
     metrics_accordion
