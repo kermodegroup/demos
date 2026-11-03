@@ -117,14 +117,15 @@ def _(mo):
     # scene sets their defaults at load time rather than changing them live.
     # Scenes 1-5 use near-deterministic labels (sigma = 0.011), as for DFT-trained interatomic potentials, where the
     # error is approximation error; scene 6 adds label noise (sigma = 0.101) to show where the posterior is right.
-    # The LJ scenes keep data inside r = x/5 + 1.5 > 0 (filter [-7.5, 10], keep inside), where the truth is defined.
+    # The LJ scenes keep data on the smooth part of the curve, x in [0, 10] (filter range with "keep inside"); x < 0 is
+    # the clipped wall.  There P = 6 is clearly misspecified; P = 10 is nearly well specified.
     SCENES = {
-        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011, methods={"bayesian"}),
-        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011,
+        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011, methods={"bayesian"}),
+        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011,
                              methods={"bayesian", "conformal"}),
-        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011,
+        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011,
                         methods={"bayesian", "conformal", "pops"}),
-        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(-7.5, 10.0), invert=True, P=10, sigma=0.011,
+        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011,
                        methods={"bayesian", "conformal", "pops", "cr3"}, samples=True),
         "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6, sigma=0.011,
                           methods={"conformal", "pops", "cr3"}),
@@ -308,7 +309,10 @@ def _(MyBayesianRidge, np):
             G = np.array(G)
             self.shifts_ = G @ Ai                       # theta_hat - theta_hat_(-k), one row per cluster
             Gc = G - G.mean(0)
-            self.cov_cr3_ = Ai @ (Gc.T @ Gc) @ Ai
+            # Keep the factor L (Sigma_CR3 = L L^T) and form variances as ||L^T x||^2: forming x^T Sigma x from Sigma
+            # loses every digit for an ill-conditioned basis (raw polynomials: cond ~ 1e18) and can go negative
+            self.L_cr3_ = Ai @ Gc.T
+            self.cov_cr3_ = self.L_cr3_ @ self.L_cr3_.T
             self.n_clusters_ = len(clusters)
             self.scale_ = 1.0
             return self
@@ -324,7 +328,7 @@ def _(MyBayesianRidge, np):
             if not return_std:
                 return y_pred
             lam = self.scale_ if rescale else 1.0
-            y_var = lam ** 2 * np.sum((X @ self.cov_cr3_) * X, axis=1)
+            y_var = lam ** 2 * np.sum((X @ self.L_cr3_) ** 2, axis=1)
             if aleatoric:
                 y_var = y_var + 1.0 / self.alpha_
             return y_pred, np.sqrt(np.maximum(y_var, 0.0))
@@ -1747,7 +1751,7 @@ def _(
 
         x_test = np.linspace(-10, 10, 1000)
         if function_type == 'lj':
-            x_test = x_test[x_test >= -7.5]   # r = x/5 + 1.5 > 0: the LJ truth is defined only there
+            x_test = x_test[x_test >= 0.0]    # the smooth LJ curve; x < 0 is the artificial clipped wall
         y_test = g(x_test, 0, function_type=function_type, custom_code=custom_code)
         X_test = x_test[:, None]
 
@@ -2192,10 +2196,16 @@ def _(
 
     # No title needed - all info is in the dashboard and outputs bar
     ax.set_xlim(X_test[:, 0].min(), 10)
-    ax.set_ylim(-1.5, 1.5)
+    if _func_type == 'lj':
+        ax.set_ylim(-1.25, 1.1)   # the smooth LJ curve spans about [-1, 0]; the legend sits above it
+    else:
+        ax.set_ylim(-1.5, 1.5)
     ax.set_xlabel('$x$')
     ax.set_ylabel('$y$')
-    ax.legend(loc='lower left')
+    if _func_type == 'lj':
+        ax.legend(loc='upper right', ncol=3, fontsize='small')
+    else:
+        ax.legend(loc='lower left')
 
     # Apply tight_layout before adding inset (to avoid warning)
     plt.tight_layout()
