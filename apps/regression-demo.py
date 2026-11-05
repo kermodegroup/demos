@@ -115,19 +115,19 @@ def _(mo):
     # Each sets the starting values of the controls; everything can still be changed by hand afterwards.
     # The P slider and method checkboxes are deliberately not driven by state (circular dependencies), so a
     # scene sets their defaults at load time rather than changing them live.
-    # Scenes 1-5 use near-deterministic labels (sigma = 0.011), as for DFT-trained interatomic potentials, where the
+    # Scenes 1-5 use near-deterministic labels (sigma = 0.001), as for DFT-trained interatomic potentials, where the
     # error is approximation error; scene 6 adds label noise (sigma = 0.101) to show where the posterior is right.
     # The LJ scenes keep data on the smooth part of the curve, x in [0, 10] (filter range with "keep inside"); x < 0 is
     # the clipped wall.  There P = 6 is clearly misspecified; P = 10 is nearly well specified.
     SCENES = {
-        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011, methods={"bayesian"}),
-        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011,
+        "lj-bayes": dict(title="1 · Bayesian (LJ)", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.001, methods={"bayesian"}),
+        "lj-conformal": dict(title="2 · + Conformal", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.001,
                              methods={"bayesian", "conformal"}),
-        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011,
+        "lj-pops": dict(title="3 · + POPS", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.001,
                         methods={"bayesian", "conformal", "pops"}),
-        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.011,
+        "lj-cr3": dict(title="4 · + CR3", function="lj", filter=(0.0, 10.0), invert=True, P=6, sigma=0.001,
                        methods={"bayesian", "conformal", "pops", "cr3"}, samples=True),
-        "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6, sigma=0.011,
+        "witch-gap": dict(title="5 · Gap (witch, P = 6)", function="witch", filter=(0.0, 5.0), P=6, sigma=0.001,
                           methods={"conformal", "pops", "cr3"}),
         "sin-noisy": dict(title="6 · Noisy labels: where the posterior is right (sin, P = 14, σ = 0.1)", function="sin",
                           filter=(0.0, 5.0), P=14, sigma=0.101, methods={"bayesian", "conformal", "pops", "cr3"}),
